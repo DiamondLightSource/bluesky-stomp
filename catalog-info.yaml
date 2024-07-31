@@ -1,0 +1,10 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: bluesky-stomp
+  title: bluesky-stomp
+  description: STOMP integration for bluesky
+spec:
+  type: documentation
+  lifecycle: experimental
+  owner: group:default/sscc
