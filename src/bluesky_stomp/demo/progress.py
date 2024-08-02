@@ -6,7 +6,13 @@ from bluesky_stomp.models import WaitingHookEvent
 
 
 def print_statuses(event: WaitingHookEvent) -> None:
-    print([f"{status.display_name}: {status.current}" for status in event.statuses.values()])
+    print(
+        [
+            f"{status.display_name}: {status.current}"
+            for status in event.statuses.values()
+        ]
+    )
+
 
 consumer = StompWaitingHookConsumer(Queue(name="status"), print_statuses)
 consumer.start()

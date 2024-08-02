@@ -17,11 +17,14 @@ if not OUTPUT_PATH.exists():
 
 logging.info(f"Writing to {OUTPUT_PATH}")
 
+
 def factory(name: str, start_doc: RunStart):
     serializer = Serializer(OUTPUT_PATH)
     return [serializer], []
 
+
 router = RunRouter([factory])
+
 
 def on_document(document: NamedDocument) -> None:
     router(document.name.value, document.doc)
@@ -29,6 +32,7 @@ def on_document(document: NamedDocument) -> None:
     if document.name == DocumentNames.stop:
         uid = document.doc["uid"]
         logging.info(f"Completed run {uid}")
+
 
 consumer = StompDocumentConsumer(Queue(name="documents"), on_document)
 

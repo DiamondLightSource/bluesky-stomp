@@ -21,8 +21,6 @@ LOGGER = logging.getLogger(__name__)
 CORRELATION_ID_HEADER = "correlation-id"
 
 
-
-
 class AuthenticationBase:
     """
     Base class for types of authentication that stomp should recognise
@@ -43,6 +41,7 @@ class MessageContext:
     destination: str
     reply_destination: str | None
     correlation_id: str | None
+
 
 MessageListener = Callable[[MessageContext, Any], None]
 
