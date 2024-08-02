@@ -6,12 +6,11 @@ from typing import Any
 from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
+from blueapi.config import StompConfig
+from blueapi.messaging import MessageContext, MessagingTemplate
 from pydantic import BaseModel, BaseSettings, Field
 from stomp import Connection
 from stomp.exception import ConnectFailedException, NotConnectedException
-
-from blueapi.config import StompConfig
-from blueapi.messaging import MessageContext, MessagingTemplate, StompMessagingTemplate
 
 _TIMEOUT: float = 10.0
 _COUNT = itertools.count()
@@ -28,7 +27,7 @@ class StompTestingSettings(BaseSettings):
 @pytest.fixture(params=StompTestingSettings().test_stomp_configs())
 def disconnected_template(request: pytest.FixtureRequest) -> MessagingTemplate:
     stomp_config = request.param
-    template = StompMessagingTemplate.autoconfigured(stomp_config)
+    template = MessagingTemplate.autoconfigured(stomp_config)
     assert template is not None
     return template
 
@@ -36,7 +35,7 @@ def disconnected_template(request: pytest.FixtureRequest) -> MessagingTemplate:
 @pytest.fixture(params=StompTestingSettings().test_stomp_configs())
 def template(request: pytest.FixtureRequest) -> Iterable[MessagingTemplate]:
     stomp_config = request.param
-    template = StompMessagingTemplate.autoconfigured(stomp_config)
+    template = MessagingTemplate.autoconfigured(stomp_config)
     assert template is not None
     template.connect()
     yield template
@@ -198,7 +197,7 @@ def failing_template() -> MessagingTemplate:
 
     connection = Connection()
     connection.connect = MagicMock(side_effect=connection_exception)
-    return StompMessagingTemplate(connection)
+    return MessagingTemplate(connection)
 
 
 @pytest.mark.stomp

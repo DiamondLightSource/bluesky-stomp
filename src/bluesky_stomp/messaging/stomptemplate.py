@@ -1,3 +1,4 @@
+import inspect
 import itertools
 import json
 import logging
@@ -9,38 +10,70 @@ from threading import Event
 from typing import Any
 
 import stomp
-from pydantic import parse_obj_as
+from pydantic import BaseModel, Field, TypeAdapter
 from stomp.exception import ConnectFailedException
 from stomp.utils import Frame
 
-from blueapi.config import BasicAuthentication, StompConfig
-from blueapi.utils import handle_all_exceptions, serialize
-
-from .base import DestinationProvider, MessageListener, MessagingTemplate
-from .context import MessageContext
-from .utils import determine_deserialization_type
+from bluesky_stomp.thread_exception import handle_all_exceptions
 
 LOGGER = logging.getLogger(__name__)
 
 CORRELATION_ID_HEADER = "correlation-id"
 
 
-class StompDestinationProvider(DestinationProvider):
+
+
+class AuthenticationBase:
     """
-    Destination provider for stomp, stateless so just
-    uses naming conventions
+    Base class for types of authentication that stomp should recognise
     """
 
-    def queue(self, name: str) -> str:
-        return f"/queue/{name}"
 
-    def topic(self, name: str) -> str:
-        return f"/topic/{name}"
+class BasicAuthentication(AuthenticationBase, BaseModel):
+    username: str = Field(description="Unique identifier for user")
+    password: str = Field(description="Password to verify user's identity")
 
-    def temporary_queue(self, name: str) -> str:
-        return f"/temp-queue/{name}"
 
-    default = queue
+@dataclass
+class MessageContext:
+    """
+    Context that comes with a message, provides useful information such as how to reply
+    """
+
+    destination: str
+    reply_destination: str | None
+    correlation_id: str | None
+
+MessageListener = Callable[[MessageContext, Any], None]
+
+
+class DestinationBase:
+    """Base class for possible destinations of stomp messages"""
+
+
+class Queue(DestinationBase, BaseModel):
+    """
+    Represents a queue (unicast) on a stomp broker
+    """
+
+    name: str = Field(description="Name of message queue on broker")
+
+
+class TemporaryQueue(DestinationBase, BaseModel):
+    """
+    Represents a temporary queue (unicast) on a stomp broker,
+    the broker may delete the queue after use
+    """
+
+    name: str = Field(description="Name of message queue on broker")
+
+
+class Topic(DestinationBase, BaseModel):
+    """
+    Represents a topic (multicast) on a stomp broker
+    """
+
+    name: str = Field(description="Name of message topic on broker")
 
 
 @dataclass
@@ -60,37 +93,25 @@ class Subscription:
     defer subscriptions until after connection
     """
 
-    destination: str
+    destination: DestinationBase
     callback: Callable[[Frame], None]
 
 
-class StompMessagingTemplate(MessagingTemplate):
+class MessagingTemplate:
     """
     MessagingTemplate that uses the stomp protocol, meant for use
     with ActiveMQ.
     """
 
-    _conn: stomp.Connection
-    _reconnect_policy: StompReconnectPolicy
-    _authentication: BasicAuthentication
-    _sub_num: itertools.count
-    _listener: stomp.ConnectionListener
-    _subscriptions: dict[str, Subscription]
-    _pending_subscriptions: set[str]
-    _disconnected: Event
-
-    # Stateless implementation means attribute can be static
-    _destination_provider: DestinationProvider = StompDestinationProvider()
-
     def __init__(
         self,
         conn: stomp.Connection,
         reconnect_policy: StompReconnectPolicy | None = None,
-        authentication: BasicAuthentication | None = None,
+        authentication: AuthenticationBase | None = None,
     ) -> None:
         self._conn = conn
         self._reconnect_policy = reconnect_policy or StompReconnectPolicy()
-        self._authentication = authentication or BasicAuthentication()
+        self._authentication = authentication or None
 
         self._sub_num = itertools.count()
         self._listener = stomp.ConnectionListener()
@@ -101,28 +122,34 @@ class StompMessagingTemplate(MessagingTemplate):
         self._subscriptions = {}
 
     @classmethod
-    def autoconfigured(cls, config: StompConfig) -> MessagingTemplate:
+    def for_host_and_port(
+        cls,
+        host: str,
+        port: int,
+        auth: AuthenticationBase | None = None,
+    ) -> "MessagingTemplate":
         return cls(
             stomp.Connection(
-                [(config.host, config.port)],
+                [(host, port)],
                 auto_content_length=False,
             ),
-            authentication=config.auth,
+            authentication=auth,
         )
-
-    @property
-    def destinations(self) -> DestinationProvider:
-        return self._destination_provider
 
     def send(
         self,
-        destination: str,
+        destination: DestinationBase,
         obj: Any,
         on_reply: MessageListener | None = None,
         correlation_id: str | None = None,
     ) -> None:
+        raw_destination = _destination(destination)
+        serialized_message = json.dumps(_serialize(obj))
         self._send_str(
-            destination, json.dumps(serialize(obj)), on_reply, correlation_id
+            raw_destination,
+            serialized_message,
+            on_reply,
+            correlation_id,
         )
 
     def _send_str(
@@ -143,13 +170,16 @@ class StompMessagingTemplate(MessagingTemplate):
             headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
         self._conn.send(headers=headers, body=message, destination=destination)
 
-    def subscribe(self, destination: str, callback: MessageListener) -> None:
+    def subscribe(
+        self, destination: DestinationBase, callback: MessageListener
+    ) -> None:
         LOGGER.debug(f"New subscription to {destination}")
         obj_type = determine_deserialization_type(callback, default=str)
 
         def wrapper(frame: Frame) -> None:
             as_dict = json.loads(frame.body)
-            value: Any = parse_obj_as(obj_type, as_dict)
+            adapter = TypeAdapter(obj_type)
+            value: Any = adapter.validate_python(as_dict)
 
             context = MessageContext(
                 frame.headers["destination"],
@@ -160,7 +190,7 @@ class StompMessagingTemplate(MessagingTemplate):
 
         sub_id = (
             destination
-            if destination.startswith("/temp-queue/")
+            if isinstance(destination, TemporaryQueue)
             else str(next(self._sub_num))
         )
         self._subscriptions[sub_id] = Subscription(destination, wrapper)
@@ -183,11 +213,14 @@ class StompMessagingTemplate(MessagingTemplate):
         LOGGER.info("Connecting...")
 
         try:
-            self._conn.connect(
-                username=self._authentication.username,
-                passcode=self._authentication.passcode,
-                wait=True,
-            )
+            if self._authentication is not None:
+                self._conn.connect(
+                    username=self._authentication.username,
+                    passcode=self._authentication.passcode,
+                    wait=True,
+                )
+            else:
+                self._conn.connect(wait=True)
             connected.wait()
         except ConnectFailedException as ex:
             LOGGER.exception(msg="Failed to connect to message bus", exc_info=ex)
@@ -202,7 +235,8 @@ class StompMessagingTemplate(MessagingTemplate):
             for sub_id in sub_ids or self._subscriptions.keys():
                 sub = self._subscriptions[sub_id]
                 LOGGER.info(f"Subscribing to {sub.destination}")
-                self._conn.subscribe(destination=sub.destination, id=sub_id, ack="auto")
+                raw_destination = _destination(sub.destination)
+                self._conn.subscribe(destination=raw_destination, id=sub_id, ack="auto")
 
     def disconnect(self) -> None:
         LOGGER.info("Disconnecting...")
@@ -243,3 +277,60 @@ class StompMessagingTemplate(MessagingTemplate):
 
     def is_connected(self) -> bool:
         return self._conn.is_connected()
+
+
+def _destination(destination: DestinationBase) -> str:
+    match destination:
+        case Queue(name=name):
+            return f"/queue/{name}"
+        case TemporaryQueue(name=name):
+            return f"/temp-queue/{name}"
+        case Topic(name=name):
+            return f"/topic/{name}"
+        case _:
+            raise TypeError(f"Unrecognized destination type: {destination}")
+
+
+def _serialize(obj: Any) -> Any:
+    """
+    Pydantic-aware serialization routine that can also be
+    used on primitives. So serialize(4) is 4, but
+    serialize(<model>) is a dictionary.
+
+    Args:
+        obj: The object to serialize
+
+    Returns:
+        Any: The serialized object
+    """
+
+    if isinstance(obj, BaseModel):
+        # Serialize by alias so that our camelCase models leave the service
+        # with camelCase field names
+        return obj.model_dump(by_alias=True)
+    else:
+        return obj
+
+
+def determine_deserialization_type(
+    listener: MessageListener, default: type = str
+) -> type:
+    """
+    Inspect a message listener function to determine the type to deserialize
+    a message to
+
+    Args:
+        listener (MessageListener): The function that takes a deserialized message
+        default (Type, optional): If the type cannot be determined, what default
+                                  should we fall back on? Defaults to str.
+
+    Returns:
+        Type: _description_
+    """
+
+    _, message = inspect.signature(listener).parameters.values()
+    a_type = message.annotation
+    if a_type is not inspect.Parameter.empty:
+        return a_type
+    else:
+        return default

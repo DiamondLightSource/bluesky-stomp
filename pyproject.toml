@@ -12,7 +12,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 description = "STOMP integration for bluesky"
-dependencies = [] # Add project dependencies here, e.g. ["click", "numpy"]
+dependencies = ["event-model", "stomp-py", "pydantic"]
 dynamic = ["version"]
 license.file = "LICENSE"
 readme = "README.md"
@@ -20,6 +20,7 @@ requires-python = ">=3.7"
 
 [project.optional-dependencies]
 dev = [
+    "bluesky-stomp[demo]",
     "copier",
     "pipdeptree",
     "pre-commit",
@@ -29,6 +30,15 @@ dev = [
     "ruff",
     "tox-direct",
     "types-mock",
+]
+
+demo = [
+    "bluesky",
+    "ophyd-async",
+    "IPython",
+    "h5py",
+    "prompt_toolkit>=3.0.47",
+    "suitcase-csv",
 ]
 
 [project.scripts]
