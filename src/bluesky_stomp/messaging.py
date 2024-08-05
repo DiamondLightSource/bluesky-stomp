@@ -14,22 +14,13 @@ from pydantic import BaseModel, Field, TypeAdapter
 from stomp.exception import ConnectFailedException
 from stomp.utils import Frame
 
-from bluesky_stomp.thread_exception import handle_all_exceptions
+from .models import (AuthenticationBase, DestinationBase, Queue,
+                     TemporaryQueue, Topic)
+from .utils import handle_all_exceptions
 
 LOGGER = logging.getLogger(__name__)
 
 CORRELATION_ID_HEADER = "correlation-id"
-
-
-class AuthenticationBase:
-    """
-    Base class for types of authentication that stomp should recognise
-    """
-
-
-class BasicAuthentication(AuthenticationBase, BaseModel):
-    username: str = Field(description="Unique identifier for user")
-    password: str = Field(description="Password to verify user's identity")
 
 
 @dataclass
@@ -45,35 +36,6 @@ class MessageContext:
 
 MessageListener = Callable[[Any], None]
 ContextualMessageListener = Callable[[MessageContext, Any], None]
-
-
-class DestinationBase:
-    """Base class for possible destinations of stomp messages"""
-
-
-class Queue(DestinationBase, BaseModel):
-    """
-    Represents a queue (unicast) on a stomp broker
-    """
-
-    name: str = Field(description="Name of message queue on broker")
-
-
-class TemporaryQueue(DestinationBase, BaseModel):
-    """
-    Represents a temporary queue (unicast) on a stomp broker,
-    the broker may delete the queue after use
-    """
-
-    name: str = Field(description="Name of message queue on broker")
-
-
-class Topic(DestinationBase, BaseModel):
-    """
-    Represents a topic (multicast) on a stomp broker
-    """
-
-    name: str = Field(description="Name of message topic on broker")
 
 
 @dataclass
@@ -320,9 +282,9 @@ def _serialize(obj: Any) -> Any:
         return obj
 
 
-def determine_deserialization_types(
+def determine_deserialization_type(
     listener: MessageListener, default: type = str
-) -> Mapping[str, type]:
+) -> type:
     """
     Inspect a message listener function to determine the type to deserialize
     a message to
@@ -336,10 +298,9 @@ def determine_deserialization_types(
         Type: _description_
     """
 
-    types = 
-    for name, param in inspect.signature(listener).parameters.items():
-        a_type = param.annotation
-        if a_type is not inspect.Parameter.empty:
-            return a_type
-        else:
-            return default
+    _, message = inspect.signature(listener).parameters.values()
+    a_type = message.annotation
+    if a_type is not inspect.Parameter.empty:
+        return a_type
+    else:
+        return default
