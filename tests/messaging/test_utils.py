@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from blueapi.messaging.utils import determine_deserialization_type
+from bluesky_stomp.messaging import determine_deserialization_type
 
 
 @dataclass

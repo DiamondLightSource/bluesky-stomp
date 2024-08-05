@@ -6,11 +6,11 @@ from typing import Any
 from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
-from blueapi.config import StompConfig
-from blueapi.messaging import MessageContext, MessagingTemplate
 from pydantic import BaseModel, BaseSettings, Field
 from stomp import Connection
 from stomp.exception import ConnectFailedException, NotConnectedException
+
+from bluesky_stomp.messaging import MessageContext, MessagingTemplate
 
 _TIMEOUT: float = 10.0
 _COUNT = itertools.count()
