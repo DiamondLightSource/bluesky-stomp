@@ -12,7 +12,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 description = "STOMP integration for bluesky"
-dependencies = ["event-model", "stomp-py", "pydantic"]
+dependencies = ["event-model", "stomp-py", "pydantic", "pydantic-settings"]
 dynamic = ["version"]
 license.file = "LICENSE"
 readme = "README.md"

@@ -6,11 +6,13 @@ from typing import Any
 from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
-from pydantic import BaseModel, BaseSettings, Field
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings
 from stomp import Connection
 from stomp.exception import ConnectFailedException, NotConnectedException
 
 from bluesky_stomp.messaging import MessageContext, MessagingTemplate
+from bluesky_stomp.models import Broker
 
 _TIMEOUT: float = 10.0
 _COUNT = itertools.count()
@@ -19,23 +21,23 @@ _COUNT = itertools.count()
 class StompTestingSettings(BaseSettings):
     blueapi_test_stomp_ports: list[int] = Field(default=[61613])
 
-    def test_stomp_configs(self) -> Iterable[StompConfig]:
+    def brokers(self) -> Iterable[Broker]:
         for port in self.blueapi_test_stomp_ports:
-            yield StompConfig(port=port)
+            yield Broker(host="localhost", port=port)
 
 
-@pytest.fixture(params=StompTestingSettings().test_stomp_configs())
+@pytest.fixture(params=StompTestingSettings().brokers())
 def disconnected_template(request: pytest.FixtureRequest) -> MessagingTemplate:
-    stomp_config = request.param
-    template = MessagingTemplate.autoconfigured(stomp_config)
+    broker: Broker = request.param
+    template = MessagingTemplate.for_broker(broker)
     assert template is not None
     return template
 
 
-@pytest.fixture(params=StompTestingSettings().test_stomp_configs())
+@pytest.fixture(params=StompTestingSettings().brokers())
 def template(request: pytest.FixtureRequest) -> Iterable[MessagingTemplate]:
-    stomp_config = request.param
-    template = MessagingTemplate.autoconfigured(stomp_config)
+    broker: Broker = request.param
+    template = MessagingTemplate.for_broker(broker)
     assert template is not None
     template.connect()
     yield template
@@ -82,7 +84,7 @@ def test_disconnected_error(template: MessagingTemplate, test_queue: str) -> Non
         mock_logger.assert_has_calls(expected_calls)
 
 
-@pytest.mark.stomp
+
 def test_send(template: MessagingTemplate, test_queue: str) -> None:
     f: Future = Future()
 
@@ -94,7 +96,7 @@ def test_send(template: MessagingTemplate, test_queue: str) -> None:
     assert f.result(timeout=_TIMEOUT)
 
 
-@pytest.mark.stomp
+
 def test_send_to_topic(template: MessagingTemplate, test_topic: str) -> None:
     f: Future = Future()
 
@@ -106,7 +108,7 @@ def test_send_to_topic(template: MessagingTemplate, test_topic: str) -> None:
     assert f.result(timeout=_TIMEOUT)
 
 
-@pytest.mark.stomp
+
 def test_send_on_reply(template: MessagingTemplate, test_queue: str) -> None:
     acknowledge(template, test_queue)
 
@@ -119,14 +121,14 @@ def test_send_on_reply(template: MessagingTemplate, test_queue: str) -> None:
     assert f.result(timeout=_TIMEOUT)
 
 
-@pytest.mark.stomp
+
 def test_send_and_receive(template: MessagingTemplate, test_queue: str) -> None:
     acknowledge(template, test_queue)
     reply = template.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
     assert reply == "ack"
 
 
-@pytest.mark.stomp
+
 def test_listener(template: MessagingTemplate, test_queue: str) -> None:
     @template.listener(test_queue)
     def server(ctx: MessageContext, message: str) -> None:
@@ -144,7 +146,7 @@ class Foo(BaseModel):
     b: str
 
 
-@pytest.mark.stomp
+
 @pytest.mark.parametrize(
     "message,message_type",
     [("test", str), (1, int), (Foo(a=1, b="test"), Foo)],
@@ -165,7 +167,7 @@ def test_deserialization(
     assert reply == message
 
 
-@pytest.mark.stomp
+
 def test_subscribe_before_connect(
     disconnected_template: MessagingTemplate, test_queue: str
 ) -> None:
@@ -177,7 +179,7 @@ def test_subscribe_before_connect(
     assert reply == "ack"
 
 
-@pytest.mark.stomp
+
 def test_reconnect(template: MessagingTemplate, test_queue: str) -> None:
     acknowledge(template, test_queue)
     reply = template.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
@@ -200,7 +202,7 @@ def failing_template() -> MessagingTemplate:
     return MessagingTemplate(connection)
 
 
-@pytest.mark.stomp
+
 def test_failed_connect(failing_template: MessagingTemplate, test_queue: str) -> None:
     assert not failing_template.is_connected()
     with patch(
@@ -213,7 +215,7 @@ def test_failed_connect(failing_template: MessagingTemplate, test_queue: str) ->
         )
 
 
-@pytest.mark.stomp
+
 def test_correlation_id(
     template: MessagingTemplate, test_queue: str, test_queue_2: str
 ) -> None:

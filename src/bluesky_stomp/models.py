@@ -1,15 +1,24 @@
 from pydantic import BaseModel, Field
 
 
-class AuthenticationBase:
-    """
-    Base class for types of authentication that stomp should recognise
-    """
-
-
-class BasicAuthentication(AuthenticationBase, BaseModel):
+class BasicAuthentication(BaseModel):
     username: str = Field(description="Unique identifier for user")
     password: str = Field(description="Password to verify user's identity")
+
+
+
+class Broker(BaseModel):
+    """
+    Details required to connect to a message broker 
+    """
+
+    host: str = Field(description="Host IP/DNS name")
+    port: int = Field(description="Port intended for STOMP messages")
+    auth: BasicAuthentication | None = Field(description="Authentication details, if required", default=None)
+
+    @classmethod
+    def localhost(cls) -> "Broker":
+        return cls(host="localhost", port=61613)
 
 
 class DestinationBase:

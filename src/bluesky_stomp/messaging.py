@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from stomp.exception import ConnectFailedException
 from stomp.utils import Frame
 
-from .models import (AuthenticationBase, DestinationBase, Queue,
+from .models import (BasicAuthentication, Broker, DestinationBase, Queue,
                      TemporaryQueue, Topic)
 from .utils import handle_all_exceptions
 
@@ -69,7 +69,7 @@ class MessagingTemplate:
         self,
         conn: stomp.Connection,
         reconnect_policy: StompReconnectPolicy | None = None,
-        authentication: AuthenticationBase | None = None,
+        authentication: BasicAuthentication | None = None,
     ) -> None:
         self._conn = conn
         self._reconnect_policy = reconnect_policy or StompReconnectPolicy()
@@ -84,26 +84,17 @@ class MessagingTemplate:
         self._subscriptions = {}
 
     @classmethod
-    def for_host_and_port(
+    def for_broker(
         cls,
-        host: str,
-        port: int,
-        auth: AuthenticationBase | None = None,
+        broker: Broker
     ) -> "MessagingTemplate":
         return cls(
             stomp.Connection(
-                [(host, port)],
+                [(broker.host, broker.port)],
                 auto_content_length=False,
             ),
-            authentication=auth,
+            authentication=broker.auth,
         )
-
-    @classmethod
-    def localhost(
-        cls,
-        auth: AuthenticationBase | None = None,
-    ) -> "MessagingTemplate":
-        return cls.for_host_and_port("localhost", 61613, auth=auth)
 
     def send(
         self,
