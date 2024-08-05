@@ -9,8 +9,11 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
-from stomp import Connection
-from stomp.exception import ConnectFailedException, NotConnectedException
+from stomp.connect import StompConnection11 as Connection  # type: ignore
+from stomp.exception import (  # type: ignore
+    ConnectFailedException,
+    NotConnectedException,
+)
 
 from bluesky_stomp.messaging import MessageContext, MessagingTemplate
 from bluesky_stomp.models import Broker, DestinationBase, MessageQueue, MessageTopic
@@ -68,7 +71,7 @@ def test_disconnected_error(
     caplog.set_level(logging.INFO)
     acknowledge(template, test_queue)
 
-    f: Future = Future()
+    f: Future[str] = Future()
 
     def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
@@ -85,7 +88,7 @@ def test_disconnected_error(
 
 
 def test_send(template: MessagingTemplate, test_queue: MessageQueue) -> None:
-    f: Future = Future()
+    f: Future[str] = Future()
 
     def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
@@ -96,7 +99,7 @@ def test_send(template: MessagingTemplate, test_queue: MessageQueue) -> None:
 
 
 def test_send_to_topic(template: MessagingTemplate, test_topic: MessageTopic) -> None:
-    f: Future = Future()
+    f: Future[str] = Future()
 
     def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
@@ -109,7 +112,7 @@ def test_send_to_topic(template: MessagingTemplate, test_topic: MessageTopic) ->
 def test_send_on_reply(template: MessagingTemplate, test_queue: MessageQueue) -> None:
     acknowledge(template, test_queue)
 
-    f: Future = Future()
+    f: Future[str] = Future()
 
     def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
@@ -132,10 +135,10 @@ def test_send_and_receive(
 
 
 def test_listener(template: MessagingTemplate, test_queue: MessageQueue) -> None:
-    ack = Future()
+    ack: Future[str] = Future()
 
     @template.listener(test_queue, on_error=ack.set_exception)
-    def server(message: str, ctx: MessageContext) -> None:
+    def server(message: str, ctx: MessageContext) -> None:  # type: ignore
         reply_queue = ctx.reply_destination
         if reply_queue is None:
             raise RuntimeError("reply queue is None")
@@ -162,18 +165,20 @@ def test_deserialization(
     message: Any,
     message_type: type,
 ) -> None:
-    ack = Future()
+    ack: Future[message_type] = Future()  # type: ignore
 
     def server(message: message_type, ctx: MessageContext) -> None:  # type: ignore
         reply_queue = ctx.reply_destination
         if reply_queue is None:
             raise RuntimeError("reply queue is None")
         template.send(reply_queue, message, correlation_id=ctx.correlation_id)
-        ack.set_result(message)
+        ack.set_result(message)  # type: ignore
 
-    template.subscribe(test_queue, server, on_error=ack.set_exception)
+    template.subscribe(test_queue, server, on_error=ack.set_exception)  # type: ignore
 
-    reply_future = template.send_and_receive(test_queue, message, message_type)
+    reply_future: Future[message_type] = template.send_and_receive(  # type: ignore
+        test_queue, message, message_type
+    )
     assert ack.result(timeout=_TIMEOUT) == message
     assert reply_future.result(timeout=_TIMEOUT) == message
 
@@ -203,7 +208,7 @@ def test_reconnect(template: MessagingTemplate, test_queue: MessageQueue) -> Non
 
 @pytest.fixture()
 def failing_template() -> MessagingTemplate:
-    def connection_exception(*args, **kwargs):
+    def connection_exception(*args: Any, **kwargs: Any):
         raise ConnectFailedException
 
     connection = Connection()
@@ -228,7 +233,7 @@ def test_correlation_id(
     template: MessagingTemplate, test_queue: MessageQueue, test_queue_2: MessageQueue
 ) -> None:
     correlation_id = "foobar"
-    q: Queue = Queue()
+    q: Queue[MessageContext] = Queue()
 
     def server(msg: str, ctx: MessageContext) -> None:
         q.put(ctx)

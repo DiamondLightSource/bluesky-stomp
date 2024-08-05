@@ -4,16 +4,17 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
 from threading import Event
-from typing import Any
+from typing import Any, TypeVar, cast
 
-import stomp
 from pydantic import BaseModel, TypeAdapter
-from stomp.exception import ConnectFailedException
-from stomp.utils import Frame
+from stomp.connect import ConnectionListener  # type: ignore
+from stomp.connect import StompConnection11 as Connection  # type: ignore
+from stomp.exception import ConnectFailedException  # type: ignore
+from stomp.utils import Frame  # type: ignore
 
 from .models import (
     BasicAuthentication,
@@ -26,6 +27,8 @@ from .models import (
 from .utils import handle_all_exceptions
 
 CORRELATION_ID_HEADER = "correlation-id"
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -73,7 +76,7 @@ class MessagingTemplate:
 
     def __init__(
         self,
-        conn: stomp.Connection,
+        conn: Connection,
         reconnect_policy: StompReconnectPolicy | None = None,
         authentication: BasicAuthentication | None = None,
     ) -> None:
@@ -82,17 +85,17 @@ class MessagingTemplate:
         self._authentication = authentication or None
 
         self._sub_num = itertools.count()
-        self._listener = stomp.ConnectionListener()
+        self._listener = ConnectionListener()
 
         self._listener.on_message = self._on_message
-        self._conn.set_listener("", self._listener)
+        self._conn.set_listener("", self._listener)  # type: ignore
 
         self._subscriptions: dict[str, Subscription] = {}
 
     @classmethod
     def for_broker(cls, broker: Broker) -> "MessagingTemplate":
         return cls(
-            stomp.Connection(
+            Connection(
                 [(broker.host, broker.port)],
                 auto_content_length=False,
             ),
@@ -103,9 +106,9 @@ class MessagingTemplate:
         self,
         destination: DestinationBase,
         obj: Any,
-        reply_type: type = str,
+        reply_type: type[T] = str,
         correlation_id: str | None = None,
-    ) -> Future:
+    ) -> Future[T]:
         """
         Send a message expecting a single reply.
 
@@ -121,9 +124,9 @@ class MessagingTemplate:
             Future: Future representing the reply
         """
 
-        future: Future = Future()
+        future: Future[T] = Future()
 
-        def callback(reply: Any, _: MessageContext) -> None:
+        def callback(reply: T, _: MessageContext) -> None:
             future.set_result(reply)
 
         callback.__annotations__["reply"] = reply_type
@@ -175,7 +178,7 @@ class MessagingTemplate:
             )
         if correlation_id:
             headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
-        self._conn.send(headers=headers, body=message, destination=destination)
+        self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
 
     def listener(
         self,
@@ -213,17 +216,20 @@ class MessagingTemplate:
         obj_type = determine_deserialization_type(callback, default=str)
 
         def wrapper(frame: Frame) -> None:
-            if not isinstance(frame.body, str | bytes | bytearray):
-                raise TypeError(f"Cannot decode {frame.body} into JSON")
-            as_dict = json.loads(frame.body)
-            adapter = TypeAdapter(obj_type)
-            value: Any = adapter.validate_python(as_dict)
+            headers = frame.headers  # type: ignore
+            headers = cast(Mapping[str, str], headers)
+            body = frame.body  # type: ignore
+            body = cast(str | bytes | bytearray, body)
 
-            reply_to = frame.headers.get("reply-to")
+            as_dict = json.loads(body)
+            adapter: TypeAdapter[Any] = TypeAdapter(obj_type)
+            value = adapter.validate_python(as_dict)
+
+            reply_to: str | None = headers.get("reply-to")
             context = MessageContext(
-                _destination_from_str(frame.headers["destination"]),
+                _destination_from_str(headers["destination"]),
                 _destination_from_str(reply_to) if reply_to is not None else None,
-                frame.headers.get(CORRELATION_ID_HEADER),
+                headers.get(CORRELATION_ID_HEADER),
             )
 
             callback(value, context)
@@ -256,13 +262,13 @@ class MessagingTemplate:
 
         try:
             if self._authentication is not None:
-                self._conn.connect(
+                self._conn.connect(  # type: ignore
                     username=self._authentication.username,
                     passcode=self._authentication.password,
                     wait=True,
                 )
             else:
-                self._conn.connect(wait=True)
+                self._conn.connect(wait=True)  # type: ignore
             connected.wait()
         except ConnectFailedException as ex:
             logging.exception(msg="Failed to connect to message bus", exc_info=ex)
@@ -278,7 +284,11 @@ class MessagingTemplate:
                 sub = self._subscriptions[sub_id]
                 logging.info(f"Subscribing to {sub.destination}")
                 raw_destination = _destination(sub.destination)
-                self._conn.subscribe(destination=raw_destination, id=sub_id, ack="auto")
+                self._conn.subscribe(  # type: ignore
+                    destination=raw_destination,
+                    id=sub_id,
+                    ack="auto",
+                )
 
     def disconnect(self) -> None:
         logging.info("Disconnecting...")
@@ -289,7 +299,7 @@ class MessagingTemplate:
         # object doesn't do it for us
         disconnected = Event()
         self._listener.on_disconnected = disconnected.set
-        self._conn.disconnect()
+        self._conn.disconnect()  # type: ignore
         disconnected.wait()
 
     @handle_all_exceptions
@@ -309,7 +319,11 @@ class MessagingTemplate:
     @handle_all_exceptions
     def _on_message(self, frame: Frame) -> None:
         logging.info(f"Received {frame}")
-        if (sub_id := frame.headers.get("subscription")) is not None:
+        headers: Mapping[str, Any] = cast(
+            Mapping[str, Any],
+            frame.headers,  # type: ignore
+        )
+        if (sub_id := headers.get("subscription")) is not None:
             if (sub := self._subscriptions.get(sub_id)) is not None:
                 try:
                     sub.callback(frame)
@@ -321,10 +335,10 @@ class MessagingTemplate:
             else:
                 logging.warn(f"No subscription active for id: {sub_id}")
         else:
-            logging.warn(f"No subscription ID in message headers: {frame.headers}")
+            logging.warn(f"No subscription ID in message headers: {headers}")
 
     def is_connected(self) -> bool:
-        return self._conn.is_connected()
+        return self._conn.is_connected()  # type: ignore
 
 
 def _destination(destination: DestinationBase) -> str:

@@ -21,7 +21,7 @@ def test_determine_deserialization_type() -> None:
 
 
 def test_determine_deserialization_type_with_no_type() -> None:
-    def on_message(message, headers: Mapping[str, Any]) -> None: ...
+    def on_message(message, headers: Mapping[str, Any]) -> None: ...  # type: ignore
 
     deserialization_type = determine_deserialization_type(on_message)  # type: ignore
     assert deserialization_type is str
