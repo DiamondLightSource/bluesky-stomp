@@ -1,9 +1,10 @@
 import itertools
+import logging
 from collections.abc import Iterable
 from concurrent.futures import Future
 from queue import Queue
 from typing import Any
-from unittest.mock import ANY, MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import BaseModel, Field
@@ -12,7 +13,7 @@ from stomp import Connection
 from stomp.exception import ConnectFailedException, NotConnectedException
 
 from bluesky_stomp.messaging import MessageContext, MessagingTemplate
-from bluesky_stomp.models import Broker
+from bluesky_stomp.models import Broker, DestinationBase, MessageQueue, MessageTopic
 
 _TIMEOUT: float = 10.0
 _COUNT = itertools.count()
@@ -45,26 +46,31 @@ def template(request: pytest.FixtureRequest) -> Iterable[MessagingTemplate]:
 
 
 @pytest.fixture
-def test_queue(template: MessagingTemplate) -> str:
-    return template.destinations.queue(f"test-{next(_COUNT)}")
+def test_queue() -> MessageQueue:
+    return MessageQueue(name=f"test-{next(_COUNT)}")
 
 
 @pytest.fixture
-def test_queue_2(template: MessagingTemplate) -> str:
-    return template.destinations.queue(f"test-{next(_COUNT)}")
+def test_queue_2() -> MessageQueue:
+    return MessageQueue(name=f"test-{next(_COUNT)}")
 
 
 @pytest.fixture
-def test_topic(template: MessagingTemplate) -> str:
-    return template.destinations.topic(f"test-{next(_COUNT)}")
+def test_topic() -> MessageTopic:
+    return MessageTopic(name=f"test-{next(_COUNT)}")
 
 
-def test_disconnected_error(template: MessagingTemplate, test_queue: str) -> None:
+def test_disconnected_error(
+    template: MessagingTemplate,
+    test_queue: MessageQueue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
     acknowledge(template, test_queue)
 
     f: Future = Future()
 
-    def callback(ctx: MessageContext, message: str) -> None:
+    def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
 
     if template.is_connected():
@@ -72,73 +78,73 @@ def test_disconnected_error(template: MessagingTemplate, test_queue: str) -> Non
     with pytest.raises(NotConnectedException):
         template.send(test_queue, "test_message", callback)
 
-    with patch(
-        "blueapi.messaging.stomptemplate.LOGGER.info", autospec=True
-    ) as mock_logger:
-        template.disconnect()
-        assert not template.is_connected()
-        expected_calls = [
-            call("Disconnecting..."),
-            call("Already disconnected"),
-        ]
-        mock_logger.assert_has_calls(expected_calls)
+    template.disconnect()
+    assert not template.is_connected()
+    assert "Disconnecting..." in caplog.text
+    assert "Already disconnected" in caplog.text
 
 
-
-def test_send(template: MessagingTemplate, test_queue: str) -> None:
+def test_send(template: MessagingTemplate, test_queue: MessageQueue) -> None:
     f: Future = Future()
 
-    def callback(ctx: MessageContext, message: str) -> None:
+    def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
 
-    template.subscribe(test_queue, callback)
+    template.subscribe(test_queue, callback, on_error=f.set_exception)
     template.send(test_queue, "test_message")
-    assert f.result(timeout=_TIMEOUT)
+    assert f.result(timeout=_TIMEOUT) == "test_message"
 
 
-
-def test_send_to_topic(template: MessagingTemplate, test_topic: str) -> None:
+def test_send_to_topic(template: MessagingTemplate, test_topic: MessageTopic) -> None:
     f: Future = Future()
 
-    def callback(ctx: MessageContext, message: str) -> None:
+    def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
 
-    template.subscribe(test_topic, callback)
+    template.subscribe(test_topic, callback, on_error=f.set_exception)
     template.send(test_topic, "test_message")
-    assert f.result(timeout=_TIMEOUT)
+    assert f.result(timeout=_TIMEOUT) == "test_message"
 
 
-
-def test_send_on_reply(template: MessagingTemplate, test_queue: str) -> None:
+def test_send_on_reply(template: MessagingTemplate, test_queue: MessageQueue) -> None:
     acknowledge(template, test_queue)
 
     f: Future = Future()
 
-    def callback(ctx: MessageContext, message: str) -> None:
+    def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
 
-    template.send(test_queue, "test_message", callback)
-    assert f.result(timeout=_TIMEOUT)
+    template.send(
+        test_queue,
+        "test_message",
+        on_reply=callback,
+        on_reply_error=f.set_exception,
+    )
+    assert f.result(timeout=_TIMEOUT) == "ack"
 
 
-
-def test_send_and_receive(template: MessagingTemplate, test_queue: str) -> None:
+def test_send_and_receive(
+    template: MessagingTemplate, test_queue: MessageQueue
+) -> None:
     acknowledge(template, test_queue)
     reply = template.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
     assert reply == "ack"
 
 
+def test_listener(template: MessagingTemplate, test_queue: MessageQueue) -> None:
+    ack = Future()
 
-def test_listener(template: MessagingTemplate, test_queue: str) -> None:
-    @template.listener(test_queue)
-    def server(ctx: MessageContext, message: str) -> None:
+    @template.listener(test_queue, on_error=ack.set_exception)
+    def server(message: str, ctx: MessageContext) -> None:
         reply_queue = ctx.reply_destination
         if reply_queue is None:
             raise RuntimeError("reply queue is None")
         template.send(reply_queue, "ack", correlation_id=ctx.correlation_id)
+        ack.set_result("ack")
 
-    reply = template.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
-    assert reply == "ack"
+    reply_future = template.send_and_receive(test_queue, "test", str)
+    assert ack.result(timeout=_TIMEOUT) == "ack"
+    assert reply_future.result(timeout=_TIMEOUT) == "ack"
 
 
 class Foo(BaseModel):
@@ -146,30 +152,34 @@ class Foo(BaseModel):
     b: str
 
 
-
 @pytest.mark.parametrize(
     "message,message_type",
     [("test", str), (1, int), (Foo(a=1, b="test"), Foo)],
 )
 def test_deserialization(
-    template: MessagingTemplate, test_queue: str, message: Any, message_type: type
+    template: MessagingTemplate,
+    test_queue: MessageQueue,
+    message: Any,
+    message_type: type,
 ) -> None:
-    def server(ctx: MessageContext, message: message_type) -> None:  # type: ignore
+    ack = Future()
+
+    def server(message: message_type, ctx: MessageContext) -> None:  # type: ignore
         reply_queue = ctx.reply_destination
         if reply_queue is None:
             raise RuntimeError("reply queue is None")
         template.send(reply_queue, message, correlation_id=ctx.correlation_id)
+        ack.set_result(message)
 
-    template.subscribe(test_queue, server)
-    reply = template.send_and_receive(test_queue, message, message_type).result(
-        timeout=_TIMEOUT
-    )
-    assert reply == message
+    template.subscribe(test_queue, server, on_error=ack.set_exception)
 
+    reply_future = template.send_and_receive(test_queue, message, message_type)
+    assert ack.result(timeout=_TIMEOUT) == message
+    assert reply_future.result(timeout=_TIMEOUT) == message
 
 
 def test_subscribe_before_connect(
-    disconnected_template: MessagingTemplate, test_queue: str
+    disconnected_template: MessagingTemplate, test_queue: MessageQueue
 ) -> None:
     acknowledge(disconnected_template, test_queue)
     disconnected_template.connect()
@@ -179,8 +189,7 @@ def test_subscribe_before_connect(
     assert reply == "ack"
 
 
-
-def test_reconnect(template: MessagingTemplate, test_queue: str) -> None:
+def test_reconnect(template: MessagingTemplate, test_queue: MessageQueue) -> None:
     acknowledge(template, test_queue)
     reply = template.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
     assert reply == "ack"
@@ -202,36 +211,35 @@ def failing_template() -> MessagingTemplate:
     return MessagingTemplate(connection)
 
 
-
-def test_failed_connect(failing_template: MessagingTemplate, test_queue: str) -> None:
+def test_failed_connect(
+    failing_template: MessagingTemplate,
+    test_queue: MessageQueue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
     assert not failing_template.is_connected()
-    with patch(
-        "blueapi.messaging.stomptemplate.LOGGER.error", autospec=True
-    ) as mock_logger:
-        failing_template.connect()
-        assert not failing_template.is_connected()
-        mock_logger.assert_called_once_with(
-            "Failed to connect to message bus", exc_info=ANY
-        )
 
+    failing_template.connect()
+    assert not failing_template.is_connected()
+    assert "Failed to connect to message bus" in caplog.text
 
 
 def test_correlation_id(
-    template: MessagingTemplate, test_queue: str, test_queue_2: str
+    template: MessagingTemplate, test_queue: MessageQueue, test_queue_2: MessageQueue
 ) -> None:
     correlation_id = "foobar"
     q: Queue = Queue()
 
-    def server(ctx: MessageContext, msg: str) -> None:
+    def server(msg: str, ctx: MessageContext) -> None:
         q.put(ctx)
         template.send(test_queue_2, msg, correlation_id=ctx.correlation_id)
 
-    def client(ctx: MessageContext, msg: str) -> None:
+    def client(msg: str, ctx: MessageContext) -> None:
         q.put(ctx)
 
     template.subscribe(test_queue, server)
     template.subscribe(test_queue_2, client)
-    template.send(test_queue, "test", None, correlation_id)
+    template.send(test_queue, "test", correlation_id=correlation_id)
 
     ctx_req: MessageContext = q.get(timeout=_TIMEOUT)
     assert ctx_req.correlation_id == correlation_id
@@ -239,8 +247,8 @@ def test_correlation_id(
     assert ctx_ack.correlation_id == correlation_id
 
 
-def acknowledge(template: MessagingTemplate, destination: str) -> None:
-    def server(ctx: MessageContext, message: str) -> None:
+def acknowledge(template: MessagingTemplate, destination: DestinationBase) -> None:
+    def server(message: str, ctx: MessageContext) -> None:
         reply_queue = ctx.reply_destination
         if reply_queue is None:
             raise RuntimeError("reply queue is None")
