@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Event
-from typing import Any
+from typing import Any, Mapping
 
 import stomp
 from pydantic import BaseModel, Field, TypeAdapter
@@ -43,7 +43,8 @@ class MessageContext:
     correlation_id: str | None
 
 
-MessageListener = Callable[[MessageContext, Any], None]
+MessageListener = Callable[[Any], None]
+ContextualMessageListener = Callable[[MessageContext, Any], None]
 
 
 class DestinationBase:
@@ -135,6 +136,13 @@ class MessagingTemplate:
             authentication=auth,
         )
 
+    @classmethod
+    def localhost(
+        cls,
+        auth: AuthenticationBase | None = None,
+    ) -> "MessagingTemplate":
+        return cls.for_host_and_port("localhost", 61613, auth=auth)
+
     def send(
         self,
         destination: DestinationBase,
@@ -170,7 +178,7 @@ class MessagingTemplate:
         self._conn.send(headers=headers, body=message, destination=destination)
 
     def subscribe(
-        self, destination: DestinationBase, callback: MessageListener
+        self, destination: DestinationBase, callback: MessageListener | ContextualMessageListener,
     ) -> None:
         LOGGER.debug(f"New subscription to {destination}")
         obj_type = determine_deserialization_type(callback, default=str)
@@ -185,7 +193,8 @@ class MessagingTemplate:
                 frame.headers.get("reply-to"),
                 frame.headers.get(CORRELATION_ID_HEADER),
             )
-            callback(context, value)
+            
+            callback(value, context)
 
         sub_id = (
             destination
@@ -311,9 +320,9 @@ def _serialize(obj: Any) -> Any:
         return obj
 
 
-def determine_deserialization_type(
+def determine_deserialization_types(
     listener: MessageListener, default: type = str
-) -> type:
+) -> Mapping[str, type]:
     """
     Inspect a message listener function to determine the type to deserialize
     a message to
@@ -327,9 +336,10 @@ def determine_deserialization_type(
         Type: _description_
     """
 
-    _, message = inspect.signature(listener).parameters.values()
-    a_type = message.annotation
-    if a_type is not inspect.Parameter.empty:
-        return a_type
-    else:
-        return default
+    types = 
+    for name, param in inspect.signature(listener).parameters.items():
+        a_type = param.annotation
+        if a_type is not inspect.Parameter.empty:
+            return a_type
+        else:
+            return default
