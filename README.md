@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/bluesky-stomp.svg)](https://pypi.org/project/bluesky-stomp)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-# bluesky_stomp
+# Bluesky Stomp
 
 STOMP integration for bluesky
 
