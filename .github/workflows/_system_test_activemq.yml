@@ -1,0 +1,41 @@
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        description: The version of python to install
+        required: true
+      runs-on:
+        type: string
+        description: The runner to run this job on
+        required: true
+
+env:
+  # https://github.com/pytest-dev/pytest/issues/2042
+  PY_IGNORE_IMPORTMISMATCH: "1"
+
+jobs:
+  run:
+    runs-on: ${{ inputs.runs-on }}
+    
+    services:
+      activemq:
+        image: rmohr/activemq:5.14.5-alpine
+        ports:
+          - 61613:61613
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need this to get version number from last tag
+          fetch-depth: 0
+
+      - name: Install latest versions of python packages
+        uses: ./.github/actions/install_requirements
+        with:
+          python-version: ${{ inputs.python-version }}
+          pip-install: ".[dev]"
+    
+      - name: Run tests
+        run: tox -e system-test

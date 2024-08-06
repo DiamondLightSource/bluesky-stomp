@@ -19,6 +19,7 @@ from .models import (
     DestinationBase,
     MessageQueue,
     MessageTopic,
+    ReplyMessageQueue,
     TemporaryMessageQueue,
 )
 from .serdes import (
@@ -310,7 +311,7 @@ class MessagingTemplate:
 
     @handle_all_exceptions
     def _on_disconnected(self) -> None:
-        logging.warn(
+        logging.warning(
             "Stomp connection lost, will attempt reconnection with "
             f"policy {self._reconnect_policy}"
         )
@@ -339,9 +340,9 @@ class MessagingTemplate:
                     else:
                         raise ex
             else:
-                logging.warn(f"No subscription active for id: {sub_id}")
+                logging.warning(f"No subscription active for id: {sub_id}")
         else:
-            logging.warn(f"No subscription ID in message headers: {headers}")
+            logging.warning(f"No subscription ID in message headers: {headers}")
 
     def is_connected(self) -> bool:
         return self._conn.is_connected()  # type: ignore
@@ -353,6 +354,8 @@ def _destination(destination: DestinationBase) -> str:
             return f"/queue/{name}"
         case TemporaryMessageQueue(name=name):
             return f"/temp-queue/{name}"
+        case ReplyMessageQueue(name=name):
+            return f"/reply-queue/{name}"
         case MessageTopic(name=name):
             return f"/topic/{name}"
         case _:
@@ -365,6 +368,7 @@ def _destination_from_str(destination: str) -> DestinationBase:
         constructor = {
             "queue": MessageQueue,
             "temp-queue": TemporaryMessageQueue,
+            "reply-queue": ReplyMessageQueue,
             "topic": MessageTopic,
         }[destination_type]
         return constructor(name=destination_name)
