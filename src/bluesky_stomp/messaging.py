@@ -158,7 +158,7 @@ class MessagingTemplate:
     ) -> None:
         raw_destination = _destination(destination)
         serialized_message = self._serializer(obj)
-        self._send_str(
+        self._send_bytes(
             raw_destination,
             serialized_message,
             on_reply,
@@ -166,10 +166,10 @@ class MessagingTemplate:
             correlation_id,
         )
 
-    def _send_str(
+    def _send_bytes(
         self,
         destination: str,
-        message: str,
+        message: bytes,
         on_reply: MessageListener | None = None,
         on_reply_error: ErrorListener | None = None,
         correlation_id: str | None = None,
