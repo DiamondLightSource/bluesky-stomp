@@ -6,6 +6,7 @@ from queue import Queue
 from typing import Any
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from pydantic import BaseModel
 from stomp.connect import StompConnection11 as Connection  # type: ignore
@@ -146,7 +147,12 @@ class Foo(BaseModel):
 
 @pytest.mark.parametrize(
     "message,message_type",
-    [("test", str), (1, int), (Foo(a=1, b="test"), Foo)],
+    [
+        ("test", str),
+        (1, int),
+        (Foo(a=1, b="test"), Foo),
+        (np.array([1, 2, 3]), list),
+    ],
 )
 def test_deserialization(
     template: MessagingTemplate,
@@ -168,7 +174,10 @@ def test_deserialization(
     reply_future: Future[message_type] = template.send_and_receive(  # type: ignore
         test_queue, message, message_type
     )
-    assert ack.result(timeout=_TIMEOUT) == message
+    result = ack.result(timeout=_TIMEOUT)  # type: ignore
+    if type(message) is np.ndarray:
+        message = message.tolist()
+    assert result == message
     assert reply_future.result(timeout=_TIMEOUT) == message
 
 

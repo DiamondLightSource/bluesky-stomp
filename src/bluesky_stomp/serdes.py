@@ -1,18 +1,18 @@
 import inspect
-import json
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+import orjson
 from pydantic import BaseModel, TypeAdapter
 
 T = TypeVar("T")
 
 
-MessageSerializer = Callable[[Any], str]
+MessageSerializer = Callable[[Any], bytes]
 MessageDeserializer = Callable[[str | bytes | bytearray, type[T]], T]
 
 
-def serialize_message(message: Any) -> str:
+def serialize_message(message: Any) -> bytes:
     """
     Pydantic-aware serialization routine that can also be
     used on primitives. So serialize(4) is "4", but
@@ -32,7 +32,7 @@ def serialize_message(message: Any) -> str:
     else:
         json_serializable = message
 
-    return json.dumps(json_serializable)
+    return orjson.dumps(json_serializable, option=orjson.OPT_SERIALIZE_NUMPY)
 
 
 def deserialize_message(message: str | bytes | bytearray, obj_type: type[T]) -> T:
@@ -47,7 +47,7 @@ def deserialize_message(message: str | bytes | bytearray, obj_type: type[T]) -> 
         T: An instance of obj_type
     """
 
-    as_primitive = json.loads(message)
+    as_primitive = orjson.loads(message)
     adapter: TypeAdapter[Any] = TypeAdapter(obj_type)
     return adapter.validate_python(as_primitive)
 

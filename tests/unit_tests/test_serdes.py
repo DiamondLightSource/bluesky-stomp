@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import pytest
 from pydantic import BaseModel
 
@@ -77,25 +78,28 @@ def test_determine_callback_deserialization_type_with_empty_signature() -> None:
 @dataclass
 class DeAndSerializationTestCase:
     obj: Any
-    as_string: str
+    as_bytes: bytes
     obj_type: type[Any]
 
 
 DE_SERIALIZATION_TEST_CASES = [
-    DeAndSerializationTestCase("test", '"test"', str),
-    DeAndSerializationTestCase(1, "1", int),
-    DeAndSerializationTestCase(False, "false", bool),
-    DeAndSerializationTestCase([1, 2, 3], "[1, 2, 3]", list),
-    DeAndSerializationTestCase({"foo": 1}, '{"foo": 1}', dict),
-    DeAndSerializationTestCase(Foo(bar=1, baz="baz"), '{"bar": 1, "baz": "baz"}', Foo),
+    DeAndSerializationTestCase("test", b'"test"', str),
+    DeAndSerializationTestCase(1, b"1", int),
+    DeAndSerializationTestCase(False, b"false", bool),
+    DeAndSerializationTestCase([1, 2, 3], b"[1,2,3]", list),
+    DeAndSerializationTestCase({"foo": 1}, b'{"foo":1}', dict),
+    DeAndSerializationTestCase(Foo(bar=1, baz="baz"), b'{"bar":1,"baz":"baz"}', Foo),
+    DeAndSerializationTestCase(np.array([1, 2, 3]), b"[1,2,3]", list),
 ]
 
 
 @pytest.mark.parametrize("test_case", DE_SERIALIZATION_TEST_CASES)
 def test_serialization(test_case: DeAndSerializationTestCase) -> None:
-    assert serialize_message(test_case.obj) == test_case.as_string
+    assert serialize_message(test_case.obj) == test_case.as_bytes
 
 
 @pytest.mark.parametrize("test_case", DE_SERIALIZATION_TEST_CASES)
 def test_deserialization(test_case: DeAndSerializationTestCase) -> None:
-    assert deserialize_message(test_case.as_string, test_case.obj_type) == test_case.obj
+    assert np.array_equal(
+        deserialize_message(test_case.as_bytes, test_case.obj_type), test_case.obj
+    )

@@ -69,7 +69,7 @@ def test_sends_serialized_message(mock_connection: Mock, template: MessagingTemp
     template.send(MessageQueue(name="misc"), {"foo": 1})
     mock_connection.send.assert_called_once_with(
         headers=ANY,
-        body='{"foo": 1}',
+        body=b'{"foo":1}',
         destination=ANY,
     )
 
