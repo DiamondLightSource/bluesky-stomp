@@ -254,31 +254,29 @@ class MessagingTemplate:
         self._ensure_subscribed([sub_id])
 
     def connect(self) -> None:
-        if self._conn.is_connected():
-            return
+        if not self._conn.is_connected():
+            connected: Event = Event()
 
-        connected: Event = Event()
+            def finished_connecting(frame: Frame) -> None:
+                connected.set()
 
-        def finished_connecting(frame: Frame) -> None:
-            connected.set()
+            self._listener.on_connected = finished_connecting
+            self._listener.on_disconnected = self._on_disconnected
 
-        self._listener.on_connected = finished_connecting
-        self._listener.on_disconnected = self._on_disconnected
+            logging.info("Connecting...")
 
-        logging.info("Connecting...")
-
-        try:
-            if self._authentication is not None:
-                self._conn.connect(  # type: ignore
-                    username=self._authentication.username,
-                    passcode=self._authentication.password,
-                    wait=True,
-                )
-            else:
-                self._conn.connect(wait=True)  # type: ignore
-            connected.wait()
-        except ConnectFailedException as ex:
-            logging.exception(msg="Failed to connect to message bus", exc_info=ex)
+            try:
+                if self._authentication is not None:
+                    self._conn.connect(  # type: ignore
+                        username=self._authentication.username,
+                        passcode=self._authentication.password,
+                        wait=True,
+                    )
+                else:
+                    self._conn.connect(wait=True)  # type: ignore
+                connected.wait()
+            except ConnectFailedException as ex:
+                logging.exception(msg="Failed to connect to message bus", exc_info=ex)
 
         self._ensure_subscribed()
 
