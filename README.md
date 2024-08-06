@@ -7,26 +7,44 @@
 
 STOMP integration for bluesky
 
-This is where you should write a short paragraph that describes what your module does,
-how it does it, and why people should use it.
-
 Source          | <https://github.com/DiamondLightSource/bluesky-stomp>
 :---:           | :---:
 PyPI            | `pip install bluesky-stomp`
 Releases        | <https://github.com/DiamondLightSource/bluesky-stomp/releases>
 
-This is where you should put some images or code snippets that illustrate
-some relevant examples. If it is a library then you might put some
-introductory code here:
+## Low Level API
+
+The library comes with some helpers for interacting with a stomp broker:
 
 ```python
-from bluesky_stomp import __version__
+from bluesky_stomp.messaging import MessageContext, MessagingTemplate
+from bluesky_stomp.models import Broker, MessageQueue, MessageTopic
 
-print(f"Hello bluesky_stomp {__version__}")
-```
+# Assumes you have an unauthenticated broker such as ActiveMQ running on localhost:61613
+template = MessagingTemplate.for_broker(Broker(host="localhost", port=61613))
 
-Or if it is a commandline tool then you might put some example commands here:
+try:
+    # Connect to the broker
+    template.connect()
 
-```
-python -m bluesky_stomp --version
+    # Send a message to a queue and a topic
+    template.send(MessageQueue(name="my-queue"), {"foo": 1, "bar": 2})
+    template.send(MessageTopic(name="my-topic"), {"foo": 1, "bar": 2})
+
+    # Subscribe to messages on a topic, print all messages received,
+    # assumes there is another service to post messages to the topic
+    def on_message(message: str, context: MessageContext) -> None:
+        print(message)
+
+    template.subscribe(MessageTopic(name="my-other-topic"), on_message)
+
+    # Send a message and wait for a reply, assumes there is another service
+    # post the reply
+    reply_future = template.send_and_receive(
+        MessageQueue(name="my-queue"), {"foo": 1, "bar": 2}
+    )
+    print(reply_future.result(timeout=5.0))
+finally:
+    # Disconnect at the end
+    template.disconnect()
 ```
