@@ -2,6 +2,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class BasicAuthentication(BaseModel):
+    """
+    User credentials for basic authentication
+    """
+
     username: str = Field(description="Unique identifier for user")
     password: str = Field(description="Password to verify user's identity")
 
@@ -23,9 +27,9 @@ class Broker(BaseModel):
 
 
 class DestinationBase(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     """Base class for possible destinations of stomp messages"""
+
+    model_config = ConfigDict(frozen=True)
 
 
 class MessageQueue(DestinationBase):
