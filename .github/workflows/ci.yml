@@ -34,7 +34,7 @@ jobs:
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  system-test:
+  system-test-activemq:
     needs: check
     if: needs.check.outputs.branch-pr == ''
     strategy:
@@ -42,11 +42,24 @@ jobs:
         runs-on: ["ubuntu-latest"] # can add windows-latest, macos-latest
         python-version: ["3.10", "3.11"]
       fail-fast: false
-    uses: ./.github/workflows/_system_test.yml
+    uses: ./.github/workflows/_system_test_activemq.yml
     with:
       runs-on: ${{ matrix.runs-on }}
       python-version: ${{ matrix.python-version }}
 
+  system-test-rabbitmq:
+    needs: check
+    if: needs.check.outputs.branch-pr == ''
+    strategy:
+      matrix:
+        runs-on: ["ubuntu-latest"] # can add windows-latest, macos-latest
+        python-version: ["3.10", "3.11"]
+      fail-fast: false
+    uses: ./.github/workflows/_system_test_rabbitmq.yml
+    with:
+      runs-on: ${{ matrix.runs-on }}
+      python-version: ${{ matrix.python-version }}
+    
   dist:
     needs: check
     if: needs.check.outputs.branch-pr == ''

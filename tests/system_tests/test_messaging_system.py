@@ -7,8 +7,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel
 from stomp.connect import StompConnection11 as Connection  # type: ignore
 from stomp.exception import (  # type: ignore
     ConnectFailedException,
@@ -22,26 +21,16 @@ _TIMEOUT: float = 10.0
 _COUNT = itertools.count()
 
 
-class StompTestingSettings(BaseSettings):
-    blueapi_test_stomp_ports: list[int] = Field(default=[61613])
-
-    def brokers(self) -> Iterable[Broker]:
-        for port in self.blueapi_test_stomp_ports:
-            yield Broker(host="localhost", port=port)
-
-
-@pytest.fixture(params=StompTestingSettings().brokers())
-def disconnected_template(request: pytest.FixtureRequest) -> MessagingTemplate:
-    broker: Broker = request.param
-    template = MessagingTemplate.for_broker(broker)
+@pytest.fixture
+def disconnected_template() -> MessagingTemplate:
+    template = MessagingTemplate.for_broker(Broker.localhost())
     assert template is not None
     return template
 
 
-@pytest.fixture(params=StompTestingSettings().brokers())
-def template(request: pytest.FixtureRequest) -> Iterable[MessagingTemplate]:
-    broker: Broker = request.param
-    template = MessagingTemplate.for_broker(broker)
+@pytest.fixture
+def template() -> Iterable[MessagingTemplate]:
+    template = MessagingTemplate.for_broker(Broker.localhost())
     assert template is not None
     template.connect()
     yield template
