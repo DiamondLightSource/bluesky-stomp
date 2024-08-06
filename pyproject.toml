@@ -93,7 +93,7 @@ allowlist_externals =
 commands =
     pre-commit: pre-commit run --all-files --show-diff-on-failure {posargs}
     type-checking: pyright src tests {posargs}
-    tests: pytest --cov=bluesky_stomp --cov-report term --cov-report xml:cov.xml {posargs}
+    tests: pytest --cov=bluesky_stomp --cov-report term --cov-report xml:cov.xml tests/unit_tests {posargs}
 """
 
 [tool.ruff]
