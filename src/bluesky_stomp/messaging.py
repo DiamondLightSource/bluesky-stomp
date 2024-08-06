@@ -1,6 +1,4 @@
-import inspect
 import itertools
-import json
 import logging
 import time
 import uuid
@@ -10,7 +8,6 @@ from dataclasses import dataclass
 from threading import Event
 from typing import Any, TypeVar, cast
 
-from pydantic import BaseModel, TypeAdapter
 from stomp.connect import ConnectionListener  # type: ignore
 from stomp.connect import StompConnection11 as Connection  # type: ignore
 from stomp.exception import ConnectFailedException  # type: ignore
@@ -23,6 +20,13 @@ from .models import (
     MessageQueue,
     MessageTopic,
     TemporaryMessageQueue,
+)
+from .serdes import (
+    MessageDeserializer,
+    MessageSerializer,
+    deserialize_message,
+    determine_callback_deserialization_type,
+    serialize_message,
 )
 from .utils import handle_all_exceptions
 
@@ -79,10 +83,14 @@ class MessagingTemplate:
         conn: Connection,
         reconnect_policy: StompReconnectPolicy | None = None,
         authentication: BasicAuthentication | None = None,
+        serializer: MessageSerializer = serialize_message,
+        deserializer: MessageDeserializer[Any] = deserialize_message,
     ) -> None:
         self._conn = conn
         self._reconnect_policy = reconnect_policy or StompReconnectPolicy()
         self._authentication = authentication or None
+        self._serializer = serializer
+        self._deserializer = deserializer
 
         self._sub_num = itertools.count()
         self._listener = ConnectionListener()
@@ -148,7 +156,7 @@ class MessagingTemplate:
         correlation_id: str | None = None,
     ) -> None:
         raw_destination = _destination(destination)
-        serialized_message = json.dumps(_serialize(obj))
+        serialized_message = self._serializer(obj)
         self._send_str(
             raw_destination,
             serialized_message,
@@ -213,7 +221,7 @@ class MessagingTemplate:
         on_error: ErrorListener | None = None,
     ) -> None:
         logging.debug(f"New subscription to {destination}")
-        obj_type = determine_deserialization_type(callback, default=str)
+        obj_type = determine_callback_deserialization_type(callback)
 
         def wrapper(frame: Frame) -> None:
             headers = frame.headers  # type: ignore
@@ -221,9 +229,7 @@ class MessagingTemplate:
             body = frame.body  # type: ignore
             body = cast(str | bytes | bytearray, body)
 
-            as_dict = json.loads(body)
-            adapter: TypeAdapter[Any] = TypeAdapter(obj_type)
-            value = adapter.validate_python(as_dict)
+            value = self._deserializer(body, obj_type)
 
             reply_to: str | None = headers.get("reply-to")
             context = MessageContext(
@@ -364,48 +370,3 @@ def _destination_from_str(destination: str) -> DestinationBase:
         return constructor(name=destination_name)
     else:
         return MessageQueue(name=destination)
-
-
-def _serialize(obj: Any) -> Any:
-    """
-    Pydantic-aware serialization routine that can also be
-    used on primitives. So serialize(4) is 4, but
-    serialize(<model>) is a dictionary.
-
-    Args:
-        obj: The object to serialize
-
-    Returns:
-        Any: The serialized object
-    """
-
-    if isinstance(obj, BaseModel):
-        # Serialize by alias so that our camelCase models leave the service
-        # with camelCase field names
-        return obj.model_dump(by_alias=True)
-    else:
-        return obj
-
-
-def determine_deserialization_type(
-    listener: MessageListener, default: type = str
-) -> type:
-    """
-    Inspect a message listener function to determine the type to deserialize
-    a message to
-
-    Args:
-        listener (MessageListener): The function that takes a deserialized message
-        default (Type, optional): If the type cannot be determined, what default
-                                  should we fall back on? Defaults to str.
-
-    Returns:
-        Type: _description_
-    """
-
-    message, _ = inspect.signature(listener).parameters.values()
-    a_type = message.annotation
-    if a_type is not inspect.Parameter.empty:
-        return a_type
-    else:
-        return default

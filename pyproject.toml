@@ -82,7 +82,7 @@ legacy_tox_ini = """
 [tox]
 skipsdist=True
 
-[testenv:{pre-commit,type-checking,tests}]
+[testenv:{pre-commit,type-checking,tests,system-tests}]
 # Don't create a virtualenv for the command, requires tox-direct plugin
 direct = True
 passenv = *
@@ -94,6 +94,7 @@ commands =
     pre-commit: pre-commit run --all-files --show-diff-on-failure {posargs}
     type-checking: pyright src tests {posargs}
     tests: pytest --cov=bluesky_stomp --cov-report term --cov-report xml:cov.xml tests/unit_tests {posargs}
+    system-tests: pytest --cov=bluesky_stomp --cov-report term --cov-report xml:cov.xml tests/system_tests {posargs}
 """
 
 [tool.ruff]
