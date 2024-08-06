@@ -19,6 +19,7 @@ from .models import (
     DestinationBase,
     MessageQueue,
     MessageTopic,
+    ReplyMessageQueue,
     TemporaryMessageQueue,
 )
 from .serdes import (
@@ -353,6 +354,8 @@ def _destination(destination: DestinationBase) -> str:
             return f"/queue/{name}"
         case TemporaryMessageQueue(name=name):
             return f"/temp-queue/{name}"
+        case ReplyMessageQueue(name=name):
+            return f"/reply-queue/{name}"
         case MessageTopic(name=name):
             return f"/topic/{name}"
         case _:
@@ -365,6 +368,7 @@ def _destination_from_str(destination: str) -> DestinationBase:
         constructor = {
             "queue": MessageQueue,
             "temp-queue": TemporaryMessageQueue,
+            "reply-queue": ReplyMessageQueue,
             "topic": MessageTopic,
         }[destination_type]
         return constructor(name=destination_name)

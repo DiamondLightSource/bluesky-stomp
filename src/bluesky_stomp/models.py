@@ -45,6 +45,16 @@ class TemporaryMessageQueue(DestinationBase):
     name: str = Field(description="Name of message queue on broker")
 
 
+class ReplyMessageQueue(DestinationBase):
+    """
+    Represents a temporary queue (unicast) on a stomp broker specifically
+    for replying to other messages. Needed because RabbitMQ uses reply
+    queues and ActiveMQ uses temp queues.
+    """
+
+    name: str = Field(description="Name of message queue on broker")
+
+
 class MessageTopic(DestinationBase):
     """
     Represents a topic (multicast) on a stomp broker
