@@ -62,7 +62,7 @@ class StompReconnectPolicy:
 
 
 @dataclass
-class Subscription:
+class _Subscription:
     """
     Details of a subscription, the template needs its own representation to
     defer subscriptions until after connection
@@ -75,8 +75,8 @@ class Subscription:
 
 class MessagingTemplate:
     """
-    MessagingTemplate that uses the stomp protocol, meant for use
-    with ActiveMQ.
+    Utility class with helper methods for communication with a STOMP
+    broker such as ActiveMQ or RabbitMQ.
     """
 
     def __init__(
@@ -87,6 +87,20 @@ class MessagingTemplate:
         serializer: MessageSerializer = serialize_message,
         deserializer: MessageDeserializer[Any] = deserialize_message,
     ) -> None:
+        """
+        Constructor
+
+        Args:
+            conn: STOMP connection object
+            reconnect_policy: Policy for how to handle unexpected disconnection.
+            Defaults to the default settings of StompReconnectPolicy.
+            authentication: Authentication credentials, if required. Defaults to None.
+            serializer: Function to serialize messages to send to the broker.
+            Defaults to serialize_message.
+            deserializer: Function to deserialize messages from the broker.
+            Defaults to deserialize_message.
+        """
+
         self._conn = conn
         self._reconnect_policy = reconnect_policy or StompReconnectPolicy()
         self._authentication = authentication or None
@@ -99,10 +113,20 @@ class MessagingTemplate:
         self._listener.on_message = self._on_message
         self._conn.set_listener("", self._listener)  # type: ignore
 
-        self._subscriptions: dict[str, Subscription] = {}
+        self._subscriptions: dict[str, _Subscription] = {}
 
     @classmethod
     def for_broker(cls, broker: Broker) -> "MessagingTemplate":
+        """
+        Alternative constructor that sets up a connection from host details
+
+        Args:
+            broker: Details of the message broker
+
+        Returns:
+            MessagingTemplate: A new template
+        """
+
         return cls(
             Connection(
                 [(broker.host, broker.port)],
@@ -122,15 +146,14 @@ class MessagingTemplate:
         Send a message expecting a single reply.
 
         Args:
-            destination (str): Destination to send the message
-            obj (Any): Message to send, must be serializable
-            reply_type (Type, optional): Expected type of reply, used
-                                         in deserialization. Defaults to str.
-            correlation_id (Optional[str]): An id which correlates this request with
-                                                requests it spawns or the request which
-                                                spawned it etc.
+            destination: Destination to send the message
+            obj: Message to send, must be serializable
+            reply_type: Expected type of reply, used in deserialization.
+            Defaults to str.
+            correlation_id: An id which correlates this request with requests it
+            spawns or the request which spawned it etc.
         Returns:
-            Future: Future representing the reply
+            Future[T]: Future representing the reply
         """
 
         future: Future[T] = Future()
@@ -156,6 +179,20 @@ class MessagingTemplate:
         on_reply_error: ErrorListener | None = None,
         correlation_id: str | None = None,
     ) -> None:
+        """
+        Send a message to a given destination, handle a reply if required
+
+        Args:
+            destination: Where to send the message
+            obj: Message content
+            on_reply: Callback for a reply, if supplied, the broker will be asked
+            to create a temporary queue for replies. Defaults to None.
+            on_reply_error: How to handle any errors in processing replies.
+            Defaults to None.
+            correlation_id: Correlation ID to be optionally included in message
+            headers. Defaults to None.
+        """
+
         raw_destination = _destination(destination)
         serialized_message = self._serializer(obj)
         self._send_bytes(
@@ -221,6 +258,16 @@ class MessagingTemplate:
         callback: MessageListener,
         on_error: ErrorListener | None = None,
     ) -> None:
+        """
+        Subscibe to messages on a particular queue or topic
+
+        Args:
+            destination: Where the messages will come from
+            callback: Function for processing the messages.
+            The message type is derived from the function signature.
+            on_error: How to handle errors processing the message. Defaults to None.
+        """
+
         logging.debug(f"New subscription to {destination}")
         obj_type = determine_callback_deserialization_type(callback)
 
@@ -246,7 +293,7 @@ class MessagingTemplate:
             if isinstance(destination, TemporaryMessageQueue)
             else str(next(self._sub_num))
         )
-        self._subscriptions[sub_id] = Subscription(
+        self._subscriptions[sub_id] = _Subscription(
             destination, wrapper, on_error=on_error
         )
         # If we're connected, subscribe immediately, otherwise the subscription is
@@ -254,6 +301,10 @@ class MessagingTemplate:
         self._ensure_subscribed([sub_id])
 
     def connect(self) -> None:
+        """
+        Connect to the broker
+        """
+
         if not self._conn.is_connected():
             connected: Event = Event()
 
@@ -296,6 +347,10 @@ class MessagingTemplate:
                 )
 
     def disconnect(self) -> None:
+        """
+        Disconnect from the broker
+        """
+
         logging.info("Disconnecting...")
         if not self.is_connected():
             logging.info("Already disconnected")
