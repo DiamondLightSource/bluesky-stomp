@@ -4,14 +4,11 @@ from collections.abc import Iterable
 from concurrent.futures import Future
 from queue import Queue
 from typing import Any
-from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 from pydantic import BaseModel
-from stomp.connect import StompConnection11 as Connection  # type: ignore
 from stomp.exception import (  # type: ignore
-    ConnectFailedException,
     NotConnectedException,
 )
 
@@ -202,23 +199,6 @@ def test_reconnect(template: MessagingTemplate, test_queue: MessageQueue) -> Non
     assert template.is_connected()
     reply = template.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
     assert reply == "ack"
-
-
-@pytest.fixture()
-def failing_template() -> MessagingTemplate:
-    def connection_exception(*args: Any, **kwargs: Any):
-        raise ConnectFailedException
-
-    connection = Connection()
-    connection.connect = MagicMock(side_effect=connection_exception)
-    return MessagingTemplate(connection)
-
-
-def test_failed_connect(failing_template: MessagingTemplate) -> None:
-    assert not failing_template.is_connected()
-    with pytest.raises(ConnectFailedException):
-        failing_template.connect()
-    assert not failing_template.is_connected()
 
 
 def test_correlation_id(

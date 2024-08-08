@@ -35,13 +35,31 @@ def template(mock_connection: Mock) -> MessagingTemplate:
     return MessagingTemplate(conn=mock_connection)
 
 
+# Depends on template to ensure fixtures are executed in correct order
 @pytest.fixture
 def mock_listener(mock_connection: Mock, template: MessagingTemplate) -> Mock:
     return mock_connection.set_listener.mock_calls[0].args[1]
 
 
+@pytest.fixture()
+def failing_template(mock_connection: Mock) -> MessagingTemplate:
+    mock_connection.connect.side_effect = ConnectFailedException
+    return MessagingTemplate(mock_connection)
+
+
 def test_for_broker_constructor():
     MessagingTemplate.for_broker(Broker.localhost())
+
+
+def test_failed_connect(
+    mock_connection: Mock,
+    failing_template: MessagingTemplate,
+) -> None:
+    mock_connection.is_connected.return_value = False
+    assert not failing_template.is_connected()
+    with pytest.raises(ConnectFailedException):
+        failing_template.connect()
+    assert not failing_template.is_connected()
 
 
 @pytest.mark.parametrize(
