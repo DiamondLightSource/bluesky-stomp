@@ -214,17 +214,11 @@ def failing_template() -> MessagingTemplate:
     return MessagingTemplate(connection)
 
 
-def test_failed_connect(
-    failing_template: MessagingTemplate,
-    test_queue: MessageQueue,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    caplog.set_level(logging.INFO)
+def test_failed_connect(failing_template: MessagingTemplate) -> None:
     assert not failing_template.is_connected()
-
-    failing_template.connect()
+    with pytest.raises(ConnectFailedException):
+        failing_template.connect()
     assert not failing_template.is_connected()
-    assert "Failed to connect to message bus" in caplog.text
 
 
 def test_correlation_id(
