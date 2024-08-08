@@ -39,7 +39,7 @@ try:
     template.subscribe(MessageTopic(name="my-other-topic"), on_message)
 
     # Send a message and wait for a reply, assumes there is another service
-    # post the reply
+    # to post the reply
     reply_future = template.send_and_receive(
         MessageQueue(name="my-queue"), {"foo": 1, "bar": 2}
     )
