@@ -1,5 +1,5 @@
 import re
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from unittest.mock import ANY, Mock, patch
 
 import pytest
