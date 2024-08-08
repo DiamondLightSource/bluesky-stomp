@@ -302,7 +302,7 @@ class MessagingTemplate:
 
     def connect(self) -> None:
         """
-        Connect to the broker
+        Connect to the broker, blocks until connection established
         """
 
         if not self._conn.is_connected():
@@ -316,20 +316,20 @@ class MessagingTemplate:
 
             logging.info("Connecting...")
 
-            try:
-                if self._authentication is not None:
-                    self._conn.connect(  # type: ignore
-                        username=self._authentication.username,
-                        passcode=self._authentication.password,
-                        wait=True,
-                    )
-                else:
-                    self._conn.connect(wait=True)  # type: ignore
-                connected.wait()
-            except ConnectFailedException as ex:
-                logging.exception(msg="Failed to connect to message bus", exc_info=ex)
+            self._connect_to_broker()
+            connected.wait()
 
         self._ensure_subscribed()
+
+    def _connect_to_broker(self) -> None:
+        if self._authentication is not None:
+            self._conn.connect(  # type: ignore
+                username=self._authentication.username,
+                passcode=self._authentication.password,
+                wait=True,
+            )
+        else:
+            self._conn.connect(wait=True)  # type: ignore
 
     def _ensure_subscribed(self, sub_ids: list[str] | None = None) -> None:
         # We must defer subscription until after connection, because stomp literally
