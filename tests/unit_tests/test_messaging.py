@@ -1,9 +1,10 @@
 import re
 from concurrent.futures import Future
-from unittest.mock import ANY, Mock
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 from stomp.connect import (  # type: ignore
+    ConnectFailedException,
     Frame,
 )
 from stomp.connect import StompConnection11 as Connection  # type: ignore
@@ -14,6 +15,7 @@ from bluesky_stomp.messaging import (
     MessagingTemplate,
 )
 from bluesky_stomp.models import (
+    BasicAuthentication,
     Broker,
     DestinationBase,
     MessageQueue,
@@ -33,13 +35,31 @@ def template(mock_connection: Mock) -> MessagingTemplate:
     return MessagingTemplate(conn=mock_connection)
 
 
+# Depends on template to ensure fixtures are executed in correct order
 @pytest.fixture
 def mock_listener(mock_connection: Mock, template: MessagingTemplate) -> Mock:
     return mock_connection.set_listener.mock_calls[0].args[1]
 
 
+@pytest.fixture()
+def failing_template(mock_connection: Mock) -> MessagingTemplate:
+    mock_connection.connect.side_effect = ConnectFailedException
+    return MessagingTemplate(mock_connection)
+
+
 def test_for_broker_constructor():
     MessagingTemplate.for_broker(Broker.localhost())
+
+
+def test_failed_connect(
+    mock_connection: Mock,
+    failing_template: MessagingTemplate,
+) -> None:
+    mock_connection.is_connected.return_value = False
+    assert not failing_template.is_connected()
+    with pytest.raises(ConnectFailedException):
+        failing_template.connect()
+    assert not failing_template.is_connected()
 
 
 @pytest.mark.parametrize(
@@ -266,3 +286,137 @@ def test_subscription_error_handling(
             )
         )
         future.result(timeout=0)  # Should raise an exception
+
+
+def test_subscription_default_error_handling(
+    mock_listener: Mock,
+    mock_connection: Mock,
+    template: MessagingTemplate,
+):
+    mock_connection.is_connected.return_value = True
+
+    def callback(message: str, context: MessageContext) -> None:
+        raise RuntimeError("test_subscription_default_error_handling")
+
+    template.subscribe(MessageQueue(name="misc"), callback)
+
+    with pytest.raises(RuntimeError):
+        mock_listener.on_message(
+            Frame(
+                cmd="RECV",
+                headers={
+                    "subscription": "0",
+                    "destination": "/queue/misc",
+                },
+                body='"foo"',
+            )
+        )
+
+
+def test_connect_error_propagated(
+    mock_connection: Mock,
+    template: MessagingTemplate,
+):
+    mock_connection.is_connected.return_value = False
+    mock_connection.connect.side_effect = ConnectFailedException
+
+    with pytest.raises(ConnectFailedException):
+        template.connect()
+
+
+@patch("bluesky_stomp.messaging.Event")
+def test_connect_connects_to_bus(
+    mock_event: Mock,
+    mock_connection: Mock,
+    template: MessagingTemplate,
+):
+    mock_connection.is_connected.return_value = False
+    template.connect()
+    mock_connection.connect.assert_called_once_with(wait=True)
+
+
+@patch("bluesky_stomp.messaging.Event")
+def test_connect_synchs_on_listener(
+    mock_event: Mock,
+    mock_listener: Mock,
+    mock_connection: Mock,
+    template: MessagingTemplate,
+):
+    mock_event_instance = Mock()
+    mock_event.return_value = mock_event_instance
+
+    mock_connection.is_connected.return_value = False
+    template.connect()
+
+    mock_event_instance.wait.assert_called_once()
+    mock_event_instance.set.assert_not_called()
+
+    mock_listener.on_connected(...)
+
+    mock_event_instance.set.assert_called_once()
+
+
+@patch("bluesky_stomp.messaging.Event")
+@patch("bluesky_stomp.messaging.time.sleep")
+def test_disconnect_polls(
+    mock_event: Mock,
+    mock_sleep: Mock,
+    mock_listener: Mock,
+    mock_connection: Mock,
+    template: MessagingTemplate,
+):
+    mock_connection.is_connected.side_effect = [
+        False,
+        False,
+        False,
+        False,
+        False,
+        True,
+        True,
+        True,
+        True,
+    ]
+    mock_connection.connect.side_effect = [
+        None,
+        ConnectFailedException,
+        ConnectFailedException,
+        None,
+    ]
+    template.connect()
+
+    assert mock_connection.connect.call_count == 1
+
+    mock_listener.on_disconnected()
+    assert mock_connection.connect.call_count == 2
+
+
+@patch("bluesky_stomp.messaging.Event")
+def test_connect_passes_basic_auth_details(
+    mock_event: Mock,
+    mock_connection: Mock,
+):
+    template = MessagingTemplate(
+        conn=mock_connection,
+        authentication=BasicAuthentication(
+            username="foo",
+            password="bar",
+        ),
+    )
+    mock_connection.is_connected.return_value = False
+    template.connect()
+    mock_connection.connect.assert_called_once_with(
+        username="foo",
+        passcode="bar",
+        wait=True,
+    )
+
+
+@patch("bluesky_stomp.messaging.Event")
+def test_disconnect_disconnects_from_bus(
+    mock_event: Mock,
+    mock_connection: Mock,
+    template: MessagingTemplate,
+):
+    mock_connection.is_connected.return_value = True
+    template.disconnect()
+    mock_connection.disconnect.assert_called_once()
