@@ -209,11 +209,11 @@ def test_correlation_id(
         q.put(ctx)
         client.send(test_queue_2, msg, correlation_id=ctx.correlation_id)
 
-    def client(msg: str, ctx: MessageContext) -> None:
+    def callback(msg: str, ctx: MessageContext) -> None:
         q.put(ctx)
 
     client.subscribe(test_queue, server)
-    client.subscribe(test_queue_2, client)
+    client.subscribe(test_queue_2, callback)
     client.send(test_queue, "test", correlation_id=correlation_id)
 
     ctx_req: MessageContext = q.get(timeout=_TIMEOUT)
