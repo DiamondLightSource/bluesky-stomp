@@ -12,7 +12,7 @@ from stomp.connect import StompConnection11 as Connection  # type: ignore
 from bluesky_stomp.messaging import (
     CORRELATION_ID_HEADER,
     MessageContext,
-    MessagingTemplate,
+    StompClient,
 )
 from bluesky_stomp.models import (
     BasicAuthentication,
@@ -31,35 +31,35 @@ def mock_connection() -> Mock:
 
 
 @pytest.fixture
-def template(mock_connection: Mock) -> MessagingTemplate:
-    return MessagingTemplate(conn=mock_connection)
+def client(mock_connection: Mock) -> StompClient:
+    return StompClient(conn=mock_connection)
 
 
-# Depends on template to ensure fixtures are executed in correct order
+# Depends on client to ensure fixtures are executed in correct order
 @pytest.fixture
-def mock_listener(mock_connection: Mock, template: MessagingTemplate) -> Mock:
+def mock_listener(mock_connection: Mock, client: StompClient) -> Mock:
     return mock_connection.set_listener.mock_calls[0].args[1]
 
 
 @pytest.fixture()
-def failing_template(mock_connection: Mock) -> MessagingTemplate:
+def failing_client(mock_connection: Mock) -> StompClient:
     mock_connection.connect.side_effect = ConnectFailedException
-    return MessagingTemplate(mock_connection)
+    return StompClient(mock_connection)
 
 
 def test_for_broker_constructor():
-    MessagingTemplate.for_broker(Broker.localhost())
+    StompClient.for_broker(Broker.localhost())
 
 
 def test_failed_connect(
     mock_connection: Mock,
-    failing_template: MessagingTemplate,
+    failing_client: StompClient,
 ) -> None:
     mock_connection.is_connected.return_value = False
-    assert not failing_template.is_connected()
+    assert not failing_client.is_connected()
     with pytest.raises(ConnectFailedException):
-        failing_template.connect()
-    assert not failing_template.is_connected()
+        failing_client.connect()
+    assert not failing_client.is_connected()
 
 
 @pytest.mark.parametrize(
@@ -73,11 +73,11 @@ def test_failed_connect(
 )
 def test_sends_to_correct_destination(
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
     destination: DestinationBase,
     expected_raw_destination: str,
 ):
-    template.send(destination, "misc")
+    client.send(destination, "misc")
     mock_connection.send.assert_called_once_with(
         headers=ANY,
         body=ANY,
@@ -85,8 +85,8 @@ def test_sends_to_correct_destination(
     )
 
 
-def test_sends_serialized_message(mock_connection: Mock, template: MessagingTemplate):
-    template.send(MessageQueue(name="misc"), {"foo": 1})
+def test_sends_serialized_message(mock_connection: Mock, client: StompClient):
+    client.send(MessageQueue(name="misc"), {"foo": 1})
     mock_connection.send.assert_called_once_with(
         headers=ANY,
         body=b'{"foo":1}',
@@ -94,8 +94,8 @@ def test_sends_serialized_message(mock_connection: Mock, template: MessagingTemp
     )
 
 
-def test_sends_jms_headers(mock_connection: Mock, template: MessagingTemplate):
-    template.send(MessageQueue(name="misc"), "misc")
+def test_sends_jms_headers(mock_connection: Mock, client: StompClient):
+    client.send(MessageQueue(name="misc"), "misc")
     mock_connection.send.assert_called_once_with(
         headers={"JMSType": "TextMessage"},
         body=ANY,
@@ -103,8 +103,8 @@ def test_sends_jms_headers(mock_connection: Mock, template: MessagingTemplate):
     )
 
 
-def test_sends_correlation_id(mock_connection: Mock, template: MessagingTemplate):
-    template.send(MessageQueue(name="misc"), "misc", correlation_id="foo")
+def test_sends_correlation_id(mock_connection: Mock, client: StompClient):
+    client.send(MessageQueue(name="misc"), "misc", correlation_id="foo")
     mock_connection.send.assert_called_once_with(
         headers={
             "JMSType": "TextMessage",
@@ -115,8 +115,8 @@ def test_sends_correlation_id(mock_connection: Mock, template: MessagingTemplate
     )
 
 
-def test_sends_reply_queue(mock_connection: Mock, template: MessagingTemplate):
-    template.send(
+def test_sends_reply_queue(mock_connection: Mock, client: StompClient):
+    client.send(
         MessageQueue(name="misc"),
         "misc",
         on_reply=lambda msg, context: None,
@@ -131,8 +131,8 @@ def test_sends_reply_queue(mock_connection: Mock, template: MessagingTemplate):
     )
 
 
-def test_subscribes_to_replies(mock_connection: Mock, template: MessagingTemplate):
-    template.send(
+def test_subscribes_to_replies(mock_connection: Mock, client: StompClient):
+    client.send(
         MessageQueue(name="misc"),
         "misc",
         on_reply=lambda msg, context: None,
@@ -140,11 +140,9 @@ def test_subscribes_to_replies(mock_connection: Mock, template: MessagingTemplat
     mock_connection.subscribe.assert_called_once()
 
 
-def test_send_and_receive_calls_subscribe(
-    mock_connection: Mock, template: MessagingTemplate
-):
+def test_send_and_receive_calls_subscribe(mock_connection: Mock, client: StompClient):
     mock_connection.is_connected.return_value = True
-    template.send_and_receive(MessageQueue(name="misc"), "message")
+    client.send_and_receive(MessageQueue(name="misc"), "message")
     mock_connection.subscribe.assert_called_once()
     kwargs = mock_connection.subscribe.mock_calls[0].kwargs
     destination = kwargs["destination"]
@@ -153,14 +151,14 @@ def test_send_and_receive_calls_subscribe(
         assert len(re.compile(r"/temp-queue/.*").findall(queue)) == 1
 
 
-def test_subscribe_before_connect(mock_connection: Mock, template: MessagingTemplate):
+def test_subscribe_before_connect(mock_connection: Mock, client: StompClient):
     mock_connection.is_connected.return_value = False
 
-    template.subscribe(MessageQueue(name="misc"), lambda msg, context: None)
+    client.subscribe(MessageQueue(name="misc"), lambda msg, context: None)
     mock_connection.subscribe.assert_not_called()
 
     mock_connection.is_connected.return_value = True
-    template.connect()
+    client.connect()
 
     mock_connection.subscribe.assert_called_once_with(
         destination=ANY,
@@ -169,10 +167,10 @@ def test_subscribe_before_connect(mock_connection: Mock, template: MessagingTemp
     )
 
 
-def test_subscribe_after_connect(mock_connection: Mock, template: MessagingTemplate):
+def test_subscribe_after_connect(mock_connection: Mock, client: StompClient):
     mock_connection.is_connected.return_value = True
 
-    template.subscribe(MessageQueue(name="misc"), lambda msg, context: None)
+    client.subscribe(MessageQueue(name="misc"), lambda msg, context: None)
 
     mock_connection.subscribe.assert_called_once_with(
         destination=ANY,
@@ -181,22 +179,22 @@ def test_subscribe_after_connect(mock_connection: Mock, template: MessagingTempl
     )
 
 
-def test_connect_is_idempotent(mock_connection: Mock, template: MessagingTemplate):
+def test_connect_is_idempotent(mock_connection: Mock, client: StompClient):
     mock_connection.is_connected.return_value = True
-    template.connect()
+    client.connect()
     mock_connection.connect.assert_not_called()
 
 
-def test_disconnect_is_idempotent(mock_connection: Mock, template: MessagingTemplate):
+def test_disconnect_is_idempotent(mock_connection: Mock, client: StompClient):
     mock_connection.is_connected.return_value = False
-    template.disconnect()
+    client.disconnect()
     mock_connection.disconnect.assert_not_called()
 
 
-def test_listener_subscribes(mock_connection: Mock, template: MessagingTemplate):
+def test_listener_subscribes(mock_connection: Mock, client: StompClient):
     mock_connection.is_connected.return_value = True
 
-    @template.listener(destination=MessageQueue(name="misc"))
+    @client.listener(destination=MessageQueue(name="misc"))
     def callback(message: str, context: MessageContext) -> None: ...  # type: ignore
 
     mock_connection.subscribe.assert_called_once_with(
@@ -209,7 +207,7 @@ def test_listener_subscribes(mock_connection: Mock, template: MessagingTemplate)
 def test_callback_propagates(
     mock_listener: Mock,
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
 ):
     mock_connection.is_connected.return_value = True
 
@@ -218,9 +216,7 @@ def test_callback_propagates(
     def callback(message: str, context: MessageContext) -> None:
         future.set_result(message)
 
-    template.subscribe(
-        MessageQueue(name="misc"), callback, on_error=future.set_exception
-    )
+    client.subscribe(MessageQueue(name="misc"), callback, on_error=future.set_exception)
 
     mock_listener.on_message(
         Frame(
@@ -238,11 +234,11 @@ def test_callback_propagates(
 def test_send_and_receive_propagates(
     mock_listener: Mock,
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
 ):
     mock_connection.is_connected.return_value = True
 
-    future = template.send_and_receive(MessageQueue(name="misc"), "message")
+    future = client.send_and_receive(MessageQueue(name="misc"), "message")
     temporary_queue_name = mock_connection.subscribe.mock_calls[0].kwargs["destination"]
 
     mock_listener.on_message(
@@ -261,7 +257,7 @@ def test_send_and_receive_propagates(
 def test_subscription_error_handling(
     mock_listener: Mock,
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
 ):
     mock_connection.is_connected.return_value = True
 
@@ -270,9 +266,7 @@ def test_subscription_error_handling(
     def callback(message: str, context: MessageContext) -> None:
         raise RuntimeError()
 
-    template.subscribe(
-        MessageQueue(name="misc"), callback, on_error=future.set_exception
-    )
+    client.subscribe(MessageQueue(name="misc"), callback, on_error=future.set_exception)
 
     with pytest.raises(RuntimeError):
         mock_listener.on_message(
@@ -291,14 +285,14 @@ def test_subscription_error_handling(
 def test_subscription_default_error_handling(
     mock_listener: Mock,
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
 ):
     mock_connection.is_connected.return_value = True
 
     def callback(message: str, context: MessageContext) -> None:
         raise RuntimeError("test_subscription_default_error_handling")
 
-    template.subscribe(MessageQueue(name="misc"), callback)
+    client.subscribe(MessageQueue(name="misc"), callback)
 
     with pytest.raises(RuntimeError):
         mock_listener.on_message(
@@ -315,23 +309,23 @@ def test_subscription_default_error_handling(
 
 def test_connect_error_propagated(
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
 ):
     mock_connection.is_connected.return_value = False
     mock_connection.connect.side_effect = ConnectFailedException
 
     with pytest.raises(ConnectFailedException):
-        template.connect()
+        client.connect()
 
 
 @patch("bluesky_stomp.messaging.Event")
 def test_connect_connects_to_bus(
     mock_event: Mock,
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
 ):
     mock_connection.is_connected.return_value = False
-    template.connect()
+    client.connect()
     mock_connection.connect.assert_called_once_with(wait=True)
 
 
@@ -340,13 +334,13 @@ def test_connect_synchs_on_listener(
     mock_event: Mock,
     mock_listener: Mock,
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
 ):
     mock_event_instance = Mock()
     mock_event.return_value = mock_event_instance
 
     mock_connection.is_connected.return_value = False
-    template.connect()
+    client.connect()
 
     mock_event_instance.wait.assert_called_once()
     mock_event_instance.set.assert_not_called()
@@ -363,7 +357,7 @@ def test_disconnect_polls(
     mock_sleep: Mock,
     mock_listener: Mock,
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
 ):
     mock_connection.is_connected.side_effect = [
         False,
@@ -382,7 +376,7 @@ def test_disconnect_polls(
         ConnectFailedException,
         None,
     ]
-    template.connect()
+    client.connect()
 
     assert mock_connection.connect.call_count == 1
 
@@ -395,7 +389,7 @@ def test_connect_passes_basic_auth_details(
     mock_event: Mock,
     mock_connection: Mock,
 ):
-    template = MessagingTemplate(
+    client = StompClient(
         conn=mock_connection,
         authentication=BasicAuthentication(
             username="foo",
@@ -403,7 +397,7 @@ def test_connect_passes_basic_auth_details(
         ),
     )
     mock_connection.is_connected.return_value = False
-    template.connect()
+    client.connect()
     mock_connection.connect.assert_called_once_with(
         username="foo",
         passcode="bar",
@@ -415,8 +409,8 @@ def test_connect_passes_basic_auth_details(
 def test_disconnect_disconnects_from_bus(
     mock_event: Mock,
     mock_connection: Mock,
-    template: MessagingTemplate,
+    client: StompClient,
 ):
     mock_connection.is_connected.return_value = True
-    template.disconnect()
+    client.disconnect()
     mock_connection.disconnect.assert_called_once()

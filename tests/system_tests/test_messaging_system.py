@@ -12,7 +12,7 @@ from stomp.exception import (  # type: ignore
     NotConnectedException,
 )
 
-from bluesky_stomp.messaging import MessageContext, MessagingTemplate
+from bluesky_stomp.messaging import MessageContext, StompClient
 from bluesky_stomp.models import Broker, DestinationBase, MessageQueue, MessageTopic
 
 _TIMEOUT: float = 10.0
@@ -20,19 +20,19 @@ _COUNT = itertools.count()
 
 
 @pytest.fixture
-def disconnected_template() -> MessagingTemplate:
-    template = MessagingTemplate.for_broker(Broker.localhost())
-    assert template is not None
-    return template
+def disconnected_client() -> StompClient:
+    client = StompClient.for_broker(Broker.localhost())
+    assert client is not None
+    return client
 
 
 @pytest.fixture
-def template() -> Iterable[MessagingTemplate]:
-    template = MessagingTemplate.for_broker(Broker.localhost())
-    assert template is not None
-    template.connect()
-    yield template
-    template.disconnect()
+def client() -> Iterable[StompClient]:
+    client = StompClient.for_broker(Broker.localhost())
+    assert client is not None
+    client.connect()
+    yield client
+    client.disconnect()
 
 
 @pytest.fixture
@@ -51,60 +51,60 @@ def test_topic() -> MessageTopic:
 
 
 def test_disconnected_error(
-    template: MessagingTemplate,
+    client: StompClient,
     test_queue: MessageQueue,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level(logging.INFO)
-    acknowledge(template, test_queue)
+    acknowledge(client, test_queue)
 
     f: Future[str] = Future()
 
     def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
 
-    if template.is_connected():
-        template.disconnect()
+    if client.is_connected():
+        client.disconnect()
     with pytest.raises(NotConnectedException):
-        template.send(test_queue, "test_message", callback)
+        client.send(test_queue, "test_message", callback)
 
-    template.disconnect()
-    assert not template.is_connected()
+    client.disconnect()
+    assert not client.is_connected()
     assert "Disconnecting..." in caplog.text
     assert "Already disconnected" in caplog.text
 
 
-def test_send(template: MessagingTemplate, test_queue: MessageQueue) -> None:
+def test_send(client: StompClient, test_queue: MessageQueue) -> None:
     f: Future[str] = Future()
 
     def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
 
-    template.subscribe(test_queue, callback, on_error=f.set_exception)
-    template.send(test_queue, "test_message")
+    client.subscribe(test_queue, callback, on_error=f.set_exception)
+    client.send(test_queue, "test_message")
     assert f.result(timeout=_TIMEOUT) == "test_message"
 
 
-def test_send_to_topic(template: MessagingTemplate, test_topic: MessageTopic) -> None:
+def test_send_to_topic(client: StompClient, test_topic: MessageTopic) -> None:
     f: Future[str] = Future()
 
     def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
 
-    template.subscribe(test_topic, callback, on_error=f.set_exception)
-    template.send(test_topic, "test_message")
+    client.subscribe(test_topic, callback, on_error=f.set_exception)
+    client.send(test_topic, "test_message")
     assert f.result(timeout=_TIMEOUT) == "test_message"
 
 
-def test_send_on_reply(template: MessagingTemplate, test_queue: MessageQueue) -> None:
-    acknowledge(template, test_queue)
+def test_send_on_reply(client: StompClient, test_queue: MessageQueue) -> None:
+    acknowledge(client, test_queue)
 
     f: Future[str] = Future()
 
     def callback(message: str, ctx: MessageContext) -> None:
         f.set_result(message)
 
-    template.send(
+    client.send(
         test_queue,
         "test_message",
         on_reply=callback,
@@ -113,26 +113,24 @@ def test_send_on_reply(template: MessagingTemplate, test_queue: MessageQueue) ->
     assert f.result(timeout=_TIMEOUT) == "ack"
 
 
-def test_send_and_receive(
-    template: MessagingTemplate, test_queue: MessageQueue
-) -> None:
-    acknowledge(template, test_queue)
-    reply = template.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
+def test_send_and_receive(client: StompClient, test_queue: MessageQueue) -> None:
+    acknowledge(client, test_queue)
+    reply = client.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
     assert reply == "ack"
 
 
-def test_listener(template: MessagingTemplate, test_queue: MessageQueue) -> None:
+def test_listener(client: StompClient, test_queue: MessageQueue) -> None:
     ack: Future[str] = Future()
 
-    @template.listener(test_queue, on_error=ack.set_exception)
+    @client.listener(test_queue, on_error=ack.set_exception)
     def server(message: str, ctx: MessageContext) -> None:  # type: ignore
         reply_queue = ctx.reply_destination
         if reply_queue is None:
             raise RuntimeError("reply queue is None")
-        template.send(reply_queue, "ack", correlation_id=ctx.correlation_id)
+        client.send(reply_queue, "ack", correlation_id=ctx.correlation_id)
         ack.set_result("ack")
 
-    reply_future = template.send_and_receive(test_queue, "test", str)
+    reply_future = client.send_and_receive(test_queue, "test", str)
     assert ack.result(timeout=_TIMEOUT) == "ack"
     assert reply_future.result(timeout=_TIMEOUT) == "ack"
 
@@ -152,7 +150,7 @@ class Foo(BaseModel):
     ],
 )
 def test_deserialization(
-    template: MessagingTemplate,
+    client: StompClient,
     test_queue: MessageQueue,
     message: Any,
     message_type: type,
@@ -163,12 +161,12 @@ def test_deserialization(
         reply_queue = ctx.reply_destination
         if reply_queue is None:
             raise RuntimeError("reply queue is None")
-        template.send(reply_queue, message, correlation_id=ctx.correlation_id)
+        client.send(reply_queue, message, correlation_id=ctx.correlation_id)
         ack.set_result(message)  # type: ignore
 
-    template.subscribe(test_queue, server, on_error=ack.set_exception)  # type: ignore
+    client.subscribe(test_queue, server, on_error=ack.set_exception)  # type: ignore
 
-    reply_future: Future[message_type] = template.send_and_receive(  # type: ignore
+    reply_future: Future[message_type] = client.send_and_receive(  # type: ignore
         test_queue, message, message_type
     )
     result = ack.result(timeout=_TIMEOUT)  # type: ignore
@@ -179,44 +177,44 @@ def test_deserialization(
 
 
 def test_subscribe_before_connect(
-    disconnected_template: MessagingTemplate, test_queue: MessageQueue
+    disconnected_client: StompClient, test_queue: MessageQueue
 ) -> None:
-    acknowledge(disconnected_template, test_queue)
-    disconnected_template.connect()
-    reply = disconnected_template.send_and_receive(test_queue, "test", str).result(
+    acknowledge(disconnected_client, test_queue)
+    disconnected_client.connect()
+    reply = disconnected_client.send_and_receive(test_queue, "test", str).result(
         timeout=_TIMEOUT
     )
     assert reply == "ack"
 
 
-def test_reconnect(template: MessagingTemplate, test_queue: MessageQueue) -> None:
-    acknowledge(template, test_queue)
-    reply = template.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
+def test_reconnect(client: StompClient, test_queue: MessageQueue) -> None:
+    acknowledge(client, test_queue)
+    reply = client.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
     assert reply == "ack"
-    template.disconnect()
-    assert not template.is_connected()
-    template.connect()
-    assert template.is_connected()
-    reply = template.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
+    client.disconnect()
+    assert not client.is_connected()
+    client.connect()
+    assert client.is_connected()
+    reply = client.send_and_receive(test_queue, "test", str).result(timeout=_TIMEOUT)
     assert reply == "ack"
 
 
 def test_correlation_id(
-    template: MessagingTemplate, test_queue: MessageQueue, test_queue_2: MessageQueue
+    client: StompClient, test_queue: MessageQueue, test_queue_2: MessageQueue
 ) -> None:
     correlation_id = "foobar"
     q: Queue[MessageContext] = Queue()
 
     def server(msg: str, ctx: MessageContext) -> None:
         q.put(ctx)
-        template.send(test_queue_2, msg, correlation_id=ctx.correlation_id)
+        client.send(test_queue_2, msg, correlation_id=ctx.correlation_id)
 
-    def client(msg: str, ctx: MessageContext) -> None:
+    def callback(msg: str, ctx: MessageContext) -> None:
         q.put(ctx)
 
-    template.subscribe(test_queue, server)
-    template.subscribe(test_queue_2, client)
-    template.send(test_queue, "test", correlation_id=correlation_id)
+    client.subscribe(test_queue, server)
+    client.subscribe(test_queue_2, callback)
+    client.send(test_queue, "test", correlation_id=correlation_id)
 
     ctx_req: MessageContext = q.get(timeout=_TIMEOUT)
     assert ctx_req.correlation_id == correlation_id
@@ -224,11 +222,11 @@ def test_correlation_id(
     assert ctx_ack.correlation_id == correlation_id
 
 
-def acknowledge(template: MessagingTemplate, destination: DestinationBase) -> None:
+def acknowledge(client: StompClient, destination: DestinationBase) -> None:
     def server(message: str, ctx: MessageContext) -> None:
         reply_queue = ctx.reply_destination
         if reply_queue is None:
             raise RuntimeError("reply queue is None")
-        template.send(reply_queue, "ack", correlation_id=ctx.correlation_id)
+        client.send(reply_queue, "ack", correlation_id=ctx.correlation_id)
 
-    template.subscribe(destination, server)
+    client.subscribe(destination, server)
