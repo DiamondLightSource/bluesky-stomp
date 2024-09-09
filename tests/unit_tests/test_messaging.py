@@ -216,9 +216,7 @@ def test_callback_propagates(
     def callback(message: str, context: MessageContext) -> None:
         future.set_result(message)
 
-    client.subscribe(
-        MessageQueue(name="misc"), callback, on_error=future.set_exception
-    )
+    client.subscribe(MessageQueue(name="misc"), callback, on_error=future.set_exception)
 
     mock_listener.on_message(
         Frame(
@@ -268,9 +266,7 @@ def test_subscription_error_handling(
     def callback(message: str, context: MessageContext) -> None:
         raise RuntimeError()
 
-    client.subscribe(
-        MessageQueue(name="misc"), callback, on_error=future.set_exception
-    )
+    client.subscribe(MessageQueue(name="misc"), callback, on_error=future.set_exception)
 
     with pytest.raises(RuntimeError):
         mock_listener.on_message(
