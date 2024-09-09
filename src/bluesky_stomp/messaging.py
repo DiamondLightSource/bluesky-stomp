@@ -64,7 +64,7 @@ class StompReconnectPolicy:
 @dataclass
 class _Subscription:
     """
-    Details of a subscription, the template needs its own representation to
+    Details of a subscription, the client needs its own representation to
     defer subscriptions until after connection
     """
 
@@ -73,7 +73,7 @@ class _Subscription:
     on_error: ErrorListener | None
 
 
-class MessagingTemplate:
+class StompClient:
     """
     Utility class with helper methods for communication with a STOMP
     broker such as ActiveMQ or RabbitMQ.
@@ -116,7 +116,7 @@ class MessagingTemplate:
         self._subscriptions: dict[str, _Subscription] = {}
 
     @classmethod
-    def for_broker(cls, broker: Broker) -> "MessagingTemplate":
+    def for_broker(cls, broker: Broker) -> "StompClient":
         """
         Alternative constructor that sets up a connection from host details
 
@@ -124,7 +124,7 @@ class MessagingTemplate:
             broker: Details of the message broker
 
         Returns:
-            MessagingTemplate: A new template
+            StompClient: A new client
         """
 
         return cls(
@@ -332,9 +332,10 @@ class MessagingTemplate:
             self._conn.connect(wait=True)  # type: ignore
 
     def _ensure_subscribed(self, sub_ids: list[str] | None = None) -> None:
-        # We must defer subscription until after connection, because stomp literally
-        # sends a SUB to the broker. But it still nice to be able to call subscribe
-        # on template before it connects, then just run the subscribes after connection.
+        # Subscription must happen AFTER connection. Because stomp literally
+        # sends a SUB to the broker. But it still nice to be able to call SUBSCRIBE
+        # on the client instance before it CONNECTS,
+        # then just run the SUBSCRIBES after connection.
         if self._conn.is_connected():
             for sub_id in sub_ids or self._subscriptions.keys():
                 sub = self._subscriptions[sub_id]
