@@ -401,7 +401,7 @@ def test_connect_passes_basic_auth_details(
     client.connect()
     mock_connection.connect.assert_called_once_with(
         username=authentication.username,
-        passcode=authentication.password,
+        passcode=authentication.password.get_secret_value(),
         wait=True,
     )
 
