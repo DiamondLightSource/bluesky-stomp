@@ -391,7 +391,7 @@ def test_connect_passes_basic_auth_details(
 ):
     authentication = BasicAuthentication(
         username="foo",
-        password="bar",
+        password="bar",  # type: ignore  https://github.com/pydantic/pydantic/issues/9557
     )
     client = StompClient(
         conn=mock_connection,
