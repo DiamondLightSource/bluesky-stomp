@@ -325,7 +325,7 @@ class StompClient:
         if self._authentication is not None:
             self._conn.connect(  # type: ignore
                 username=self._authentication.username,
-                passcode=self._authentication.password,
+                passcode=self._authentication.password.get_secret_value(),
                 wait=True,
             )
         else:
