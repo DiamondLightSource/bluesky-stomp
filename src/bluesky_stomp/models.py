@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field
+import os
+
+from pydantic import BaseModel, ConfigDict, Field, Secret, field_validator
 
 
 class BasicAuthentication(BaseModel):
@@ -7,7 +9,14 @@ class BasicAuthentication(BaseModel):
     """
 
     username: str = Field(description="Unique identifier for user")
-    password: str = Field(description="Password to verify user's identity")
+    password: Secret[str] = Field(description="Password to verify user's identity")
+
+    @field_validator("username", "password", mode="before")
+    @classmethod
+    def get_from_env(cls, v: str):
+        if v.startswith("${") and v.endswith("}"):
+            return os.environ[v.removeprefix("${").removesuffix("}").upper()]
+        return v
 
 
 class Broker(BaseModel):

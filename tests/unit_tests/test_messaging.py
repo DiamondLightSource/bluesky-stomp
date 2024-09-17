@@ -389,18 +389,19 @@ def test_connect_passes_basic_auth_details(
     mock_event: Mock,
     mock_connection: Mock,
 ):
+    authentication = BasicAuthentication(
+        username="foo",
+        password="bar",
+    )
     client = StompClient(
         conn=mock_connection,
-        authentication=BasicAuthentication(
-            username="foo",
-            password="bar",
-        ),
+        authentication=authentication,
     )
     mock_connection.is_connected.return_value = False
     client.connect()
     mock_connection.connect.assert_called_once_with(
-        username="foo",
-        passcode="bar",
+        username=authentication.username,
+        passcode=authentication.password,
         wait=True,
     )
 
