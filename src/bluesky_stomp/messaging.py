@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from threading import Event
 from typing import Any, TypeVar, cast
 
+from observability_utils.tracing import propagate_context_in_stomp_headers
+
 from stomp.connect import ConnectionListener  # type: ignore
 from stomp.connect import StompConnection11 as Connection  # type: ignore
 from stomp.exception import ConnectFailedException  # type: ignore
@@ -214,6 +216,8 @@ class StompClient:
         logging.info(f"SENDING {message} to {destination}")
 
         headers: dict[str, Any] = {"JMSType": "TextMessage"}
+        propagate_context_in_stomp_headers(headers)
+
         if on_reply is not None:
             reply_queue = TemporaryMessageQueue(name=str(uuid.uuid1()))
             headers = {**headers, "reply-to": _destination(reply_queue)}
