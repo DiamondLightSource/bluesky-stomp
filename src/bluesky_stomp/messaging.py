@@ -8,8 +8,12 @@ from dataclasses import dataclass
 from threading import Event
 from typing import Any, TypeVar, cast
 
-from observability_utils.tracing import propagate_context_in_stomp_headers
-
+from observability_utils.tracing import (  #type:ignore
+    get_tracer,
+    propagate_context_in_stomp_headers,
+    retrieve_context_from_stomp_headers,
+    setup_tracing,
+)
 from stomp.connect import ConnectionListener  # type: ignore
 from stomp.connect import StompConnection11 as Connection  # type: ignore
 from stomp.exception import ConnectFailedException  # type: ignore
@@ -36,6 +40,9 @@ from .utils import handle_all_exceptions
 CORRELATION_ID_HEADER = "correlation-id"
 
 T = TypeVar("T")
+
+setup_tracing(__name__)
+TRACER = get_tracer(__name__)
 
 
 @dataclass
@@ -388,10 +395,14 @@ class StompClient:
             Mapping[str, Any],
             frame.headers,  # type: ignore
         )
+
+        trace_context = retrieve_context_from_stomp_headers(frame)
+
         if (sub_id := headers.get("subscription")) is not None:
             if (sub := self._subscriptions.get(sub_id)) is not None:
                 try:
-                    sub.callback(frame)
+                    with TRACER.start_as_current_span(__name__, trace_context):
+                        sub.callback(frame)
                 except Exception as ex:
                     if sub.on_error is not None:
                         sub.on_error(ex)
