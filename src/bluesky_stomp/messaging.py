@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from threading import Event
 from typing import Any, TypeVar, cast
 
-from observability_utils.tracing import (  #type:ignore
+from observability_utils.tracing import (  # type:ignore
     get_tracer,
     propagate_context_in_stomp_headers,
     retrieve_context_from_stomp_headers,
@@ -40,9 +40,6 @@ from .utils import handle_all_exceptions
 CORRELATION_ID_HEADER = "correlation-id"
 
 T = TypeVar("T")
-
-setup_tracing(__name__)
-TRACER = get_tracer(__name__)
 
 
 @dataclass
@@ -398,10 +395,15 @@ class StompClient:
 
         trace_context = retrieve_context_from_stomp_headers(frame)
 
+        setup_tracing("bluesky-stomp")
+        tracer = get_tracer("bluesky-stomp")
+
         if (sub_id := headers.get("subscription")) is not None:
             if (sub := self._subscriptions.get(sub_id)) is not None:
                 try:
-                    with TRACER.start_as_current_span(__name__, trace_context):
+                    with tracer.start_as_current_span(
+                        sub.callback.__name__, trace_context
+                    ):
                         sub.callback(frame)
                 except Exception as ex:
                     if sub.on_error is not None:
