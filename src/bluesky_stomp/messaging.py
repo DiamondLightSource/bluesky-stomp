@@ -5,6 +5,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
+from os import environ
 from threading import Event
 from typing import Any, TypeVar, cast
 
@@ -38,6 +39,8 @@ from .serdes import (
 from .utils import handle_all_exceptions
 
 CORRELATION_ID_HEADER = "correlation-id"
+
+OTLP_EXPORT_ENABLED = environ.get("OTLP_EXPORT_ENABLED") == "true"
 
 T = TypeVar("T")
 
@@ -395,7 +398,9 @@ class StompClient:
 
         trace_context = retrieve_context_from_stomp_headers(frame)
 
-        setup_tracing("bluesky-stomp")
+        if OTLP_EXPORT_ENABLED:
+            setup_tracing("bluesky-stomp")
+
         tracer = get_tracer("bluesky-stomp")
 
         if (sub_id := headers.get("subscription")) is not None:
