@@ -41,6 +41,9 @@ from .utils import handle_all_exceptions
 CORRELATION_ID_HEADER = "correlation-id"
 
 OTLP_EXPORT_ENABLED = environ.get("OTLP_EXPORT_ENABLED") == "true"
+if OTLP_EXPORT_ENABLED:
+    setup_tracing("bluesky-stomp")
+
 
 T = TypeVar("T")
 
@@ -397,9 +400,6 @@ class StompClient:
         )
 
         trace_context = retrieve_context_from_stomp_headers(frame)
-
-        if OTLP_EXPORT_ENABLED:
-            setup_tracing("bluesky-stomp")
 
         tracer = get_tracer("bluesky-stomp")
 
