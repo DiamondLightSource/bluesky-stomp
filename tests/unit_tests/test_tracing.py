@@ -1,4 +1,4 @@
-from unittest.mock import ANY, Mock
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 from observability_utils.tracing import get_tracer, setup_tracing  # type: ignore
@@ -28,8 +28,9 @@ def mock_listener(mock_connection: Mock, client: StompClient) -> Mock:
 
 
 @pytest.fixture
-def tracer() -> Tracer:
-    return get_tracer("fixture")  # type: ignore
+def mock_tracer():
+    with patch("observability_utils.tracing.helpers.Tracer") as tracer:
+        yield tracer
 
 
 def test_sends_tracer_headers(
@@ -45,3 +46,8 @@ def test_sends_tracer_headers(
         body=ANY,
         destination=ANY,
     )
+
+
+def test_starts_span(mock_connection: Mock, client: StompClient, mock_tracer: Mock):
+    client.send(MessageQueue(name="misc"), "misc")
+    mock_tracer.start_as_current_span.assert_called()
