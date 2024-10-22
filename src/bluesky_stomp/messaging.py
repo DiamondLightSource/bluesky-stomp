@@ -226,7 +226,6 @@ class StompClient:
         logging.info(f"SENDING {message} to {destination}")
 
         headers: dict[str, Any] = {"JMSType": "TextMessage"}
-        propagate_context_in_stomp_headers(headers)
 
         if on_reply is not None:
             reply_queue = TemporaryMessageQueue(name=str(uuid.uuid1()))
@@ -238,7 +237,12 @@ class StompClient:
             )
         if correlation_id:
             headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
-        self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
+
+        tracer = get_tracer("_send_bytes")
+
+        with tracer.start_as_current_span("_send_bytes"):
+            propagate_context_in_stomp_headers(headers)
+            self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
 
     def listener(
         self,
