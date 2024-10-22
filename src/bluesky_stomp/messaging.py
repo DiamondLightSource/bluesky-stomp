@@ -401,7 +401,7 @@ class StompClient:
 
         trace_context = retrieve_context_from_stomp_headers(frame)
 
-        tracer = get_tracer("bluesky-stomp")
+        tracer = get_tracer("_on_message")
 
         if (sub_id := headers.get("subscription")) is not None:
             if (sub := self._subscriptions.get(sub_id)) is not None:
