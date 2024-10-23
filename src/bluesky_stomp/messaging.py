@@ -5,9 +5,16 @@ import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
+from os import environ
 from threading import Event
 from typing import Any, TypeVar, cast
 
+from observability_utils.tracing import (  # type:ignore
+    get_tracer,
+    propagate_context_in_stomp_headers,
+    retrieve_context_from_stomp_headers,
+    setup_tracing,
+)
 from stomp.connect import ConnectionListener  # type: ignore
 from stomp.connect import StompConnection11 as Connection  # type: ignore
 from stomp.exception import ConnectFailedException  # type: ignore
@@ -32,6 +39,11 @@ from .serdes import (
 from .utils import handle_all_exceptions
 
 CORRELATION_ID_HEADER = "correlation-id"
+
+OTLP_EXPORT_ENABLED = environ.get("OTLP_EXPORT_ENABLED") == "true"
+if OTLP_EXPORT_ENABLED:
+    setup_tracing("bluesky-stomp")
+
 
 T = TypeVar("T")
 
@@ -214,6 +226,7 @@ class StompClient:
         logging.info(f"SENDING {message} to {destination}")
 
         headers: dict[str, Any] = {"JMSType": "TextMessage"}
+
         if on_reply is not None:
             reply_queue = TemporaryMessageQueue(name=str(uuid.uuid1()))
             headers = {**headers, "reply-to": _destination(reply_queue)}
@@ -224,7 +237,12 @@ class StompClient:
             )
         if correlation_id:
             headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
-        self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
+
+        tracer = get_tracer("_send_bytes")
+
+        with tracer.start_as_current_span("_send_bytes"):
+            propagate_context_in_stomp_headers(headers)
+            self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
 
     def listener(
         self,
@@ -384,10 +402,18 @@ class StompClient:
             Mapping[str, Any],
             frame.headers,  # type: ignore
         )
+
+        trace_context = retrieve_context_from_stomp_headers(frame)
+
+        tracer = get_tracer("_on_message")
+
         if (sub_id := headers.get("subscription")) is not None:
             if (sub := self._subscriptions.get(sub_id)) is not None:
                 try:
-                    sub.callback(frame)
+                    with tracer.start_as_current_span(
+                        sub.callback.__name__, trace_context
+                    ):
+                        sub.callback(frame)
                 except Exception as ex:
                     if sub.on_error is not None:
                         sub.on_error(ex)
