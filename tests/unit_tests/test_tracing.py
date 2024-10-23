@@ -70,10 +70,10 @@ def test_long_process_starts_different_traces(
     context_2 = get_global_textmap().extract(carrier=carrier_2)
 
     # I hope this is robust
-    nrc_1: NonRecordingSpan = list(context_1.values())[0]  # type: ignore
-    nrc_2: NonRecordingSpan = list(context_2.values())[0]  # type: ignore
+    non_recording_span_1: NonRecordingSpan = list(context_1.values())[0]  # type: ignore
+    non_recording_span_2: NonRecordingSpan = list(context_2.values())[0]  # type: ignore
 
-    trace_id_1: int = nrc_1.get_span_context().trace_id
-    trace_id_2: int = nrc_2.get_span_context().trace_id
+    trace_id_1: int = non_recording_span_1.get_span_context().trace_id
+    trace_id_2: int = non_recording_span_2.get_span_context().trace_id
 
     assert trace_id_1 != trace_id_2
