@@ -1,8 +1,9 @@
 from unittest.mock import ANY, Mock, patch
 
 import pytest
-from observability_utils.tracing import get_tracer, setup_tracing  # type: ignore
-from opentelemetry.trace import Tracer
+from observability_utils.tracing import setup_tracing  # type: ignore
+from opentelemetry.propagate import get_global_textmap
+from opentelemetry.trace.span import NonRecordingSpan
 from stomp.connect import StompConnection11 as Connection  # type: ignore
 
 from bluesky_stomp.messaging import StompClient
@@ -51,3 +52,28 @@ def test_sends_tracer_headers(
 def test_starts_span(mock_connection: Mock, client: StompClient, mock_tracer: Mock):
     client.send(MessageQueue(name="misc"), "misc")
     mock_tracer.start_as_current_span.assert_called()
+
+
+def test_long_process_starts_different_traces(
+    mock_connection: Mock,
+    client: StompClient,
+):
+    for _ in range(2):
+        client.send(MessageQueue(name="misc"), "misc")
+
+    carrier_1, carrier_2 = (
+        mock_connection.send.call_args_list[0][1]["headers"],
+        mock_connection.send.call_args_list[1][1]["headers"],
+    )
+
+    context_1 = get_global_textmap().extract(carrier=carrier_1)
+    context_2 = get_global_textmap().extract(carrier=carrier_2)
+
+    # I hope this is robust
+    nrc_1: NonRecordingSpan = list(context_1.values())[0]  # type: ignore
+    nrc_2: NonRecordingSpan = list(context_2.values())[0]  # type: ignore
+
+    trace_id_1: int = nrc_1.get_span_context().trace_id
+    trace_id_2: int = nrc_2.get_span_context().trace_id
+
+    assert trace_id_1 != trace_id_2
