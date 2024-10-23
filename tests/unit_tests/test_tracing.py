@@ -61,10 +61,8 @@ def test_long_process_starts_different_traces(
     for _ in range(2):
         client.send(MessageQueue(name="misc"), "misc")
 
-    carrier_1, carrier_2 = (
-        mock_connection.send.call_args_list[0][1]["headers"],
-        mock_connection.send.call_args_list[1][1]["headers"],
-    )
+    carrier_1 = mock_connection.send.call_args_list[0][1]["headers"]
+    carrier_2 = mock_connection.send.call_args_list[1][1]["headers"]
 
     context_1 = get_global_textmap().extract(carrier=carrier_1)
     context_2 = get_global_textmap().extract(carrier=carrier_2)
