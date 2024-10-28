@@ -1,4 +1,4 @@
-from unittest.mock import ANY, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
 from observability_utils.tracing import setup_tracing  # type: ignore
@@ -8,8 +8,6 @@ from stomp.connect import StompConnection11 as Connection  # type: ignore
 
 from bluesky_stomp.messaging import StompClient
 from bluesky_stomp.models import MessageQueue
-
-setup_tracing("test_tracing", False)
 
 
 @pytest.fixture
@@ -28,10 +26,17 @@ def mock_listener(mock_connection: Mock, client: StompClient) -> Mock:
     return mock_connection.set_listener.mock_calls[0].args[1]
 
 
-@pytest.fixture
-def mock_tracer():
-    with patch("observability_utils.tracing.helpers.Tracer") as tracer:
-        yield tracer
+@pytest.fixture()
+def mock_get_tracer():
+    """Patches messaging.get_tracer with a mock that returns a MagicMock when called"""
+    with patch("bluesky_stomp.messaging.get_tracer") as get_tracer:
+        mock_tracer = MagicMock()
+
+        def side_effect():
+            return mock_tracer
+
+        get_tracer.side_effect = side_effect()
+        yield get_tracer
 
 
 def test_sends_tracer_headers(
@@ -49,8 +54,10 @@ def test_sends_tracer_headers(
     )
 
 
-def test_starts_span(mock_connection: Mock, client: StompClient, mock_tracer: Mock):
+def test_starts_span(mock_connection: Mock, client: StompClient, mock_get_tracer: Mock):
     client.send(MessageQueue(name="misc"), "misc")
+
+    mock_tracer = mock_get_tracer()
     mock_tracer.start_as_current_span.assert_called()
 
 
