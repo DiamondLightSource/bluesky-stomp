@@ -1,7 +1,6 @@
 from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
-from observability_utils.tracing import setup_tracing  # type: ignore
 from opentelemetry.propagate import get_global_textmap
 from opentelemetry.trace.span import NonRecordingSpan
 from stomp.connect import StompConnection11 as Connection  # type: ignore
