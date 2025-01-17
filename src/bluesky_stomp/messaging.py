@@ -14,6 +14,7 @@ from observability_utils.tracing import (  # type:ignore
     propagate_context_in_stomp_headers,  # type:ignore
     retrieve_context_from_stomp_headers,  # type:ignore
     setup_tracing,  # type:ignore
+    start_as_current_span,  # type: ignore
 )
 from stomp.connect import ConnectionListener  # type: ignore
 from stomp.connect import StompConnection11 as Connection  # type: ignore
@@ -183,6 +184,7 @@ class StompClient:
         )
         return future
 
+    @start_as_current_span("destination", "obj")  # type: ignore
     def send(
         self,
         destination: DestinationBase,
