@@ -128,6 +128,8 @@ class StompClient:
 
         self._subscriptions: dict[str, _Subscription] = {}
 
+        self._tracer = get_tracer("stomp_client")
+
     @classmethod
     def for_broker(cls, broker: Broker) -> "StompClient":
         """
@@ -241,9 +243,7 @@ class StompClient:
         if correlation_id:
             headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
 
-        tracer = get_tracer("_send_bytes")  # type:ignore
-
-        with tracer.start_as_current_span("_send_bytes"):  # type:ignore
+        with self._tracer.start_as_current_span("_send_bytes"):  # type:ignore
             propagate_context_in_stomp_headers(headers)
             self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
 
@@ -408,12 +408,10 @@ class StompClient:
 
         trace_context = retrieve_context_from_stomp_headers(frame)  # type:ignore
 
-        tracer = get_tracer("_on_message")  # type:ignore
-
         if (sub_id := headers.get("subscription")) is not None:
             if (sub := self._subscriptions.get(sub_id)) is not None:
                 try:
-                    with tracer.start_as_current_span(  # type:ignore
+                    with self._tracer.start_as_current_span(  # type:ignore
                         sub.callback.__name__, trace_context
                     ):
                         sub.callback(frame)
