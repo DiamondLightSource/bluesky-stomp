@@ -148,6 +148,7 @@ class StompClient:
             authentication=broker.auth,
         )
 
+    @start_as_current_span("destination", "obj")  # type: ignore
     def send_and_receive(
         self,
         destination: DestinationBase,
