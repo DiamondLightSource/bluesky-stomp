@@ -40,7 +40,7 @@ from .utils import handle_all_exceptions
 
 CORRELATION_ID_HEADER = "correlation-id"
 
-OTLP_EXPORT_ENABLED = environ.get("OTLP_EXPORT_ENABLED") == "true"
+OTLP_EXPORT_ENABLED = environ.get("OTLP_EXPORT_ENABLED").lower() == "true"
 setup_tracing("bluesky-stomp", with_otlp_export=OTLP_EXPORT_ENABLED)
 
 
