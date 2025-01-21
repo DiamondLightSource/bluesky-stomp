@@ -274,6 +274,7 @@ class StompClient:
 
         return decorator
 
+    @start_as_current_span(TRACER, "destination", "callback")
     def subscribe(
         self,
         destination: DestinationBase,
