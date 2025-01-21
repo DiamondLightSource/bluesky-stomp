@@ -242,9 +242,8 @@ class StompClient:
         if correlation_id:
             headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
 
-        with self._tracer.start_as_current_span("_send_bytes"):  # type:ignore
-            propagate_context_in_stomp_headers(headers)
-            self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
+        propagate_context_in_stomp_headers(headers)
+        self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
 
     def listener(
         self,
