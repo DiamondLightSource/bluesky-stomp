@@ -409,6 +409,7 @@ class StompClient:
 
         trace_context = retrieve_context_from_stomp_headers(frame)  # type:ignore
         with TRACER.start_as_current_span("_on_message", trace_context):
+            add_span_attributes({"frame": frame})
             if (sub_id := headers.get("subscription")) is not None:
                 if (sub := self._subscriptions.get(sub_id)) is not None:
                     try:
