@@ -105,5 +105,13 @@ def test_connect_span_has_success_attribute():
     raise NotImplementedError
 
 
+def test_disconnect_starts_span():
+    raise NotImplementedError
+
+
+def test_disconnect_span_has_success_attribute():
+    raise NotImplementedError
+
+
 def test_on_message_starts_span():
     raise NotImplementedError
