@@ -38,6 +38,10 @@ def mock_get_tracer():
         yield get_tracer
 
 
+def test_send_and_receive_starts_span():
+    raise NotImplementedError
+
+
 def test_sends_tracer_headers(
     mock_connection: Mock,
     client: StompClient,
@@ -53,7 +57,9 @@ def test_sends_tracer_headers(
     )
 
 
-def test_starts_span(mock_connection: Mock, client: StompClient, mock_get_tracer: Mock):
+def test_send_starts_span(
+    mock_connection: Mock, client: StompClient, mock_get_tracer: Mock
+):
     client.send(MessageQueue(name="misc"), "misc")
 
     mock_tracer = mock_get_tracer()
@@ -81,3 +87,23 @@ def test_long_process_starts_different_traces(
     trace_id_2: int = non_recording_span_2.get_span_context().trace_id
 
     assert trace_id_1 != trace_id_2
+
+
+def test_send_bytes_starts_span():
+    raise NotImplementedError
+
+
+def test_subscribe_starts_span():
+    raise NotImplementedError
+
+
+def test_connect_starts_span():
+    raise NotImplementedError
+
+
+def test_connect_span_has_success_attribute():
+    raise NotImplementedError
+
+
+def test_on_message_starts_span():
+    raise NotImplementedError
