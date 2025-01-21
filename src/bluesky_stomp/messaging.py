@@ -10,6 +10,7 @@ from threading import Event
 from typing import Any, TypeVar, cast
 
 from observability_utils.tracing import (  # type: ignore
+    add_span_attributes,
     get_tracer,
     propagate_context_in_stomp_headers,
     retrieve_context_from_stomp_headers,
@@ -219,6 +220,7 @@ class StompClient:
             correlation_id,
         )
 
+    @start_as_current_span(TRACER, "destination", "message")
     def _send_bytes(
         self,
         destination: str,
@@ -243,6 +245,7 @@ class StompClient:
             headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
 
         propagate_context_in_stomp_headers(headers)
+        add_span_attributes({"headers": headers})
         self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
 
     def listener(
