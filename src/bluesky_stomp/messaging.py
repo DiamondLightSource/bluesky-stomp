@@ -9,12 +9,12 @@ from os import environ
 from threading import Event
 from typing import Any, TypeVar, cast
 
-from observability_utils.tracing import (  # type: ignore
-    get_tracer,
-    propagate_context_in_stomp_headers,
-    retrieve_context_from_stomp_headers,
-    setup_tracing,
-    start_as_current_span,
+from observability_utils.tracing import (  # type:ignore
+    get_tracer,  # type:ignore
+    propagate_context_in_stomp_headers,  # type:ignore
+    retrieve_context_from_stomp_headers,  # type:ignore
+    setup_tracing,  # type:ignore
+    start_as_current_span,  # type: ignore
 )
 from stomp.connect import ConnectionListener  # type: ignore
 from stomp.connect import StompConnection11 as Connection  # type: ignore
@@ -44,7 +44,6 @@ CORRELATION_ID_HEADER = "correlation-id"
 OTLP_EXPORT_ENABLED = environ.get("OTLP_EXPORT_ENABLED", "false").lower() == "true"
 
 setup_tracing("bluesky-stomp", with_otlp_export=OTLP_EXPORT_ENABLED)
-TRACER = get_tracer("bluesky-stomp")
 
 
 T = TypeVar("T")
@@ -129,6 +128,8 @@ class StompClient:
 
         self._subscriptions: dict[str, _Subscription] = {}
 
+        self._tracer = get_tracer("stomp_client")
+
     @classmethod
     def for_broker(cls, broker: Broker) -> "StompClient":
         """
@@ -149,7 +150,7 @@ class StompClient:
             authentication=broker.auth,
         )
 
-    @start_as_current_span(TRACER, "destination", "obj")  # type: ignore
+    @start_as_current_span("destination", "obj")  # type: ignore
     def send_and_receive(
         self,
         destination: DestinationBase,
@@ -186,7 +187,7 @@ class StompClient:
         )
         return future
 
-    @start_as_current_span(TRACER, "destination", "obj")  # type: ignore
+    @start_as_current_span("destination", "obj")  # type: ignore
     def send(
         self,
         destination: DestinationBase,
