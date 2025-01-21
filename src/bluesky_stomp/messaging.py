@@ -323,10 +323,13 @@ class StompClient:
         # deferred until connection.
         self._ensure_subscribed([sub_id])
 
+    @start_as_current_span()
     def connect(self) -> None:
         """
         Connect to the broker, blocks until connection established
         """
+
+        add_span_attributes({"success": self._conn.is_connected()})
 
         if not self._conn.is_connected():
             connected: Event = Event()
@@ -343,6 +346,8 @@ class StompClient:
             connected.wait()
 
         self._ensure_subscribed()
+
+        add_span_attributes({"success": self._conn.is_connected()})
 
     def _connect_to_broker(self) -> None:
         if self._authentication is not None:
@@ -370,10 +375,12 @@ class StompClient:
                     ack="auto",
                 )
 
+    @start_as_current_span()
     def disconnect(self) -> None:
         """
         Disconnect from the broker
         """
+        add_span_attributes({"success": not self.is_connected()})
 
         logging.info("Disconnecting...")
         if not self.is_connected():
@@ -385,6 +392,8 @@ class StompClient:
         self._listener.on_disconnected = disconnected.set
         self._conn.disconnect()  # type: ignore
         disconnected.wait()
+
+        add_span_attributes({"success": not self.is_connected()})
 
     @handle_all_exceptions
     def _on_disconnected(self) -> None:
