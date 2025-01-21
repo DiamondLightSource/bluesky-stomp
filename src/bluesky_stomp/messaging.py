@@ -408,23 +408,20 @@ class StompClient:
         )
 
         trace_context = retrieve_context_from_stomp_headers(frame)  # type:ignore
-
-        if (sub_id := headers.get("subscription")) is not None:
-            if (sub := self._subscriptions.get(sub_id)) is not None:
-                try:
-                    with self._tracer.start_as_current_span(  # type:ignore
-                        sub.callback.__name__, trace_context
-                    ):
+        with TRACER.start_as_current_span("_on_message", trace_context):
+            if (sub_id := headers.get("subscription")) is not None:
+                if (sub := self._subscriptions.get(sub_id)) is not None:
+                    try:
                         sub.callback(frame)
-                except Exception as ex:
-                    if sub.on_error is not None:
-                        sub.on_error(ex)
-                    else:
-                        raise ex
+                    except Exception as ex:
+                        if sub.on_error is not None:
+                            sub.on_error(ex)
+                        else:
+                            raise ex
+                else:
+                    logging.warning(f"No subscription active for id: {sub_id}")
             else:
-                logging.warning(f"No subscription active for id: {sub_id}")
-        else:
-            logging.warning(f"No subscription ID in message headers: {headers}")
+                logging.warning(f"No subscription ID in message headers: {headers}")
 
     def is_connected(self) -> bool:
         return self._conn.is_connected()  # type: ignore
