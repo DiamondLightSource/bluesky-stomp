@@ -18,6 +18,8 @@ class BasicAuthentication(BaseModel):
             return os.environ[v.removeprefix("${").removesuffix("}").upper()]
         return v
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class Broker(BaseModel):
     """
