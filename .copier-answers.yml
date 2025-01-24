@@ -3,7 +3,7 @@ _commit: 2.6.0
 _src_path: gh:DiamondLightSource/python-copier-template
 author_email: callum.forrester@diamond.ac.uk
 author_name: Callum Forrester
-component_lifecycle: production
+component_lifecycle: experimental
 component_owner: group:default/sscc
 component_type: library
 description: STOMP integration for bluesky
