@@ -5,6 +5,6 @@ metadata:
   title: bluesky-stomp
   description: STOMP integration for bluesky
 spec:
-  type: documentation
+  type: library
   lifecycle: experimental
   owner: group:default/sscc

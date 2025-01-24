@@ -1,7 +1,7 @@
 [![CI](https://github.com/DiamondLightSource/bluesky-stomp/actions/workflows/ci.yml/badge.svg)](https://github.com/DiamondLightSource/bluesky-stomp/actions/workflows/ci.yml)
 [![Coverage](https://codecov.io/gh/DiamondLightSource/bluesky-stomp/branch/main/graph/badge.svg)](https://codecov.io/gh/DiamondLightSource/bluesky-stomp)
 [![PyPI](https://img.shields.io/pypi/v/bluesky-stomp.svg)](https://pypi.org/project/bluesky-stomp)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 # Bluesky Stomp
 
@@ -47,4 +47,6 @@ try:
 finally:
     # Disconnect at the end
     client.disconnect()
+```
+python -m bluesky_stomp --version
 ```

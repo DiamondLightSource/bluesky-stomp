@@ -57,7 +57,8 @@ name = "Callum Forrester"
 version_file = "src/bluesky_stomp/_version.py"
 
 [tool.pyright]
-strict = ["src", "tests"]
+typeCheckingMode = "strict"
+reportMissingImports = false # Ignore missing stubs in imported modules
 
 [tool.pytest.ini_options]
 # Run pytest with all our checkers, and don't spam us with massive tracebacks on error
