@@ -15,7 +15,12 @@ from bluesky_stomp.messaging import (
 
 class Foo(BaseModel):
     bar: int
-    baz: str
+    baz: str = "baz"
+
+
+class Bar(BaseModel):
+    numbers: list[int]
+    unique_numbers: set[int]
 
 
 def test_determine_callback_deserialization_type() -> None:
@@ -87,8 +92,14 @@ DE_SERIALIZATION_TEST_CASES = [
     DeAndSerializationTestCase(1, b"1", int),
     DeAndSerializationTestCase(False, b"false", bool),
     DeAndSerializationTestCase([1, 2, 3], b"[1,2,3]", list),
+    DeAndSerializationTestCase({1, 2, 3}, b"[1,2,3]", set),
     DeAndSerializationTestCase({"foo": 1}, b'{"foo":1}', dict),
     DeAndSerializationTestCase(Foo(bar=1, baz="baz"), b'{"bar":1,"baz":"baz"}', Foo),
+    DeAndSerializationTestCase(
+        Bar(numbers=[2, 2, 3], unique_numbers={4, 5, 6}),
+        b'{"numbers":[2,2,3],"unique_numbers":[4,5,6]}',
+        Bar,
+    ),
     DeAndSerializationTestCase(np.array([1, 2, 3]), b"[1,2,3]", list),
 ]
 
