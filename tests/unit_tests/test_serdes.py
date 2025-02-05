@@ -18,6 +18,11 @@ class Foo(BaseModel):
     baz: str
 
 
+class Bar(BaseModel):
+    unique: set[int]
+    repeated: list[int]
+
+
 def test_determine_callback_deserialization_type() -> None:
     def on_message(message: Foo, headers: Mapping[str, Any]) -> None: ...
 
@@ -87,9 +92,15 @@ DE_SERIALIZATION_TEST_CASES = [
     DeAndSerializationTestCase(1, b"1", int),
     DeAndSerializationTestCase(False, b"false", bool),
     DeAndSerializationTestCase([1, 2, 3], b"[1,2,3]", list),
+    DeAndSerializationTestCase({1, 2, 3}, b"[1,2,3]", set),
     DeAndSerializationTestCase({"foo": 1}, b'{"foo":1}', dict),
     DeAndSerializationTestCase(Foo(bar=1, baz="baz"), b'{"bar":1,"baz":"baz"}', Foo),
     DeAndSerializationTestCase(np.array([1, 2, 3]), b"[1,2,3]", list),
+    DeAndSerializationTestCase(
+        Bar(unique={1, 2, 3}, repeated=[1, 1, 2, 2, 3, 3]),
+        b'{"unique":[1,2,3],"repeated":[1,1,2,2,3,3]}',
+        Bar,
+    ),
 ]
 
 
@@ -103,3 +114,11 @@ def test_deserialization(test_case: DeAndSerializationTestCase) -> None:
     assert np.array_equal(
         deserialize_message(test_case.as_bytes, test_case.obj_type), test_case.obj
     )
+
+
+def test_unserializable():
+    class NewType:
+        pass
+
+    with pytest.raises(TypeError):
+        serialize_message(NewType())
