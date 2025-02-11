@@ -1,6 +1,6 @@
 import inspect
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import orjson
 from pydantic import BaseModel, TypeAdapter
@@ -32,7 +32,11 @@ def serialize_message(message: Any) -> bytes:
     else:
         json_serializable = message
 
-    return orjson.dumps(json_serializable, option=orjson.OPT_SERIALIZE_NUMPY)
+    return orjson.dumps(
+        json_serializable,
+        option=orjson.OPT_SERIALIZE_NUMPY,
+        default=_fallback_serialize,
+    )
 
 
 def deserialize_message(message: str | bytes | bytearray, obj_type: type[T]) -> T:
@@ -90,3 +94,9 @@ def determine_callback_deserialization_type(
         return a_type
     else:
         return default
+
+
+def _fallback_serialize(obj: Any) -> Any:
+    if isinstance(obj, set):
+        return list(cast(set[Any], obj))
+    raise TypeError(f"Type {type(obj)} not serializable")
