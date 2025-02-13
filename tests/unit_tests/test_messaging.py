@@ -360,12 +360,11 @@ def test_disconnect_polls(
     mock_connection.is_connected.side_effect = [
         False,
         False,
+        True,
+        True,
         False,
         False,
         False,
-        True,
-        True,
-        True,
         True,
     ]
     mock_connection.connect.side_effect = [

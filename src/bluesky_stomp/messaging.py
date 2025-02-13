@@ -245,7 +245,7 @@ class StompClient:
             headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
 
         propagate_context_in_stomp_headers(headers)
-        add_span_attributes({"headers": headers})
+        add_span_attributes({"headers": str(headers)})
         self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
 
     def listener(
@@ -323,7 +323,7 @@ class StompClient:
         # deferred until connection.
         self._ensure_subscribed([sub_id])
 
-    @start_as_current_span()
+    @start_as_current_span(TRACER)
     def connect(self) -> None:
         """
         Connect to the broker, blocks until connection established
@@ -375,12 +375,12 @@ class StompClient:
                     ack="auto",
                 )
 
-    @start_as_current_span()
+    @start_as_current_span(TRACER)
     def disconnect(self) -> None:
         """
         Disconnect from the broker
         """
-        add_span_attributes({"success": not self.is_connected()})
+        add_span_attributes({"initial": self.is_connected()})
 
         logging.info("Disconnecting...")
         if not self.is_connected():
@@ -419,7 +419,7 @@ class StompClient:
 
         trace_context = retrieve_context_from_stomp_headers(frame)  # type:ignore
         with TRACER.start_as_current_span("_on_message", trace_context):
-            add_span_attributes({"frame": frame})
+            add_span_attributes({"frame": str(frame)})
             if (sub_id := headers.get("subscription")) is not None:
                 if (sub := self._subscriptions.get(sub_id)) is not None:
                     try:

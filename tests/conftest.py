@@ -1,7 +1,25 @@
 import os
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from observability_utils.tracing import (  # type: ignore
+    JsonObjectSpanExporter,
+    setup_tracing,
+)
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.trace import get_tracer_provider
+
+
+@pytest.fixture(scope="session")
+def exporter() -> JsonObjectSpanExporter:
+    setup_tracing("test", False)
+    exporter = JsonObjectSpanExporter()
+    provider = cast(TracerProvider, get_tracer_provider())
+    # Use SimpleSpanProcessor to keep tests quick
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    return exporter
+
 
 # Prevent pytest from catching exceptions when debugging in vscode so that break on
 # exception works correctly (see: https://github.com/pytest-dev/pytest/issues/7409)

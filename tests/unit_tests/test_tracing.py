@@ -1,12 +1,21 @@
+import itertools
+from concurrent.futures import Future
 from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
+from observability_utils.tracing import (  # type: ignore
+    JsonObjectSpanExporter,
+    asserting_span_exporter,
+)
 from opentelemetry.propagate import get_global_textmap
 from opentelemetry.trace.span import NonRecordingSpan
 from stomp.connect import StompConnection11 as Connection  # type: ignore
+from stomp.utils import Frame  # type: ignore
 
-from bluesky_stomp.messaging import StompClient
+from bluesky_stomp.messaging import MessageContext, StompClient
 from bluesky_stomp.models import MessageQueue
+
+_COUNT = itertools.count()
 
 
 @pytest.fixture
@@ -25,6 +34,11 @@ def mock_listener(mock_connection: Mock, client: StompClient) -> Mock:
     return mock_connection.set_listener.mock_calls[0].args[1]
 
 
+@pytest.fixture
+def test_queue() -> MessageQueue:
+    return MessageQueue(name=f"test-{next(_COUNT)}")
+
+
 @pytest.fixture()
 def mock_get_tracer():
     """Patches messaging.get_tracer with a mock that returns a MagicMock when called"""
@@ -38,8 +52,16 @@ def mock_get_tracer():
         yield get_tracer
 
 
-def test_send_and_receive_starts_span():
-    raise NotImplementedError
+def test_send_and_receive_starts_span(
+    exporter: JsonObjectSpanExporter,
+    client: StompClient,
+    test_queue: MessageQueue,
+):
+    with asserting_span_exporter(exporter, "send_and_receive", "destination", "obj"):
+        client.send_and_receive(
+            test_queue,
+            "object",
+        )
 
 
 def test_sends_tracer_headers(
@@ -58,12 +80,15 @@ def test_sends_tracer_headers(
 
 
 def test_send_starts_span(
-    mock_connection: Mock, client: StompClient, mock_get_tracer: Mock
+    exporter: JsonObjectSpanExporter,
+    client: StompClient,
+    test_queue: MessageQueue,
 ):
-    client.send(MessageQueue(name="misc"), "misc")
-
-    mock_tracer = mock_get_tracer()
-    mock_tracer.start_as_current_span.assert_called()
+    with asserting_span_exporter(exporter, "send", "destination", "obj"):
+        client.send(
+            test_queue,
+            "object",
+        )
 
 
 def test_long_process_starts_different_traces(
@@ -89,29 +114,114 @@ def test_long_process_starts_different_traces(
     assert trace_id_1 != trace_id_2
 
 
-def test_send_bytes_starts_span():
-    raise NotImplementedError
+def test_subscribe_starts_span(
+    exporter: JsonObjectSpanExporter,
+    client: StompClient,
+    test_queue: MessageQueue,
+):
+    future: Future[str] = Future()
+
+    def callback(message: str, context: MessageContext) -> None:
+        future.set_result(message)
+
+    with asserting_span_exporter(exporter, "subscribe", "callback"):
+        client.subscribe(test_queue, callback)
 
 
-def test_subscribe_starts_span():
-    raise NotImplementedError
+def test_connect_starts_span(
+    exporter: JsonObjectSpanExporter,
+    client: StompClient,
+):
+    with asserting_span_exporter(exporter, "connect"):
+        client.connect()
 
 
-def test_connect_starts_span():
-    raise NotImplementedError
+def test_connect_span_has_success_attribute(
+    exporter: JsonObjectSpanExporter, client: StompClient, mock_connection: Mock
+):
+    mock_connection.is_connected.side_effect = [True, True, True, True]
+    with asserting_span_exporter(exporter, "connect", "success"):
+        client.connect()
 
 
-def test_connect_span_has_success_attribute():
-    raise NotImplementedError
+def test_disconnect_starts_span(
+    exporter: JsonObjectSpanExporter,
+    client: StompClient,
+    mock_connection: Mock,
+    mock_listener: Mock,
+):
+    def mock_disconnect():
+        mock_listener.on_disconnected()
+
+    mock_connection.disconnect.side_effect = mock_disconnect
+    mock_connection.is_connected.side_effect = [
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        False,
+    ]
+    client.connect()
+    with asserting_span_exporter(exporter, "disconnect"):
+        client.disconnect()
 
 
-def test_disconnect_starts_span():
-    raise NotImplementedError
+def test_disconnect_span_has_initial_attribute(
+    exporter: JsonObjectSpanExporter,
+    client: StompClient,
+    mock_connection: Mock,
+    mock_listener: Mock,
+):
+    def mock_disconnect():
+        mock_listener.on_disconnected()
+
+    mock_connection.disconnect.side_effect = mock_disconnect
+    mock_connection.is_connected.side_effect = [
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        False,
+    ]
+    client.connect()
+    with asserting_span_exporter(exporter, "disconnect", "initial"):
+        client.disconnect()
 
 
-def test_disconnect_span_has_success_attribute():
-    raise NotImplementedError
+def test_disconnect_span_has_success_attribute(
+    exporter: JsonObjectSpanExporter,
+    client: StompClient,
+    mock_connection: Mock,
+    mock_listener: Mock,
+):
+    def mock_disconnect():
+        mock_listener.on_disconnected()
+
+    mock_connection.disconnect.side_effect = mock_disconnect
+    mock_connection.is_connected.side_effect = [
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        False,
+    ]
+    client.connect()
+    with asserting_span_exporter(exporter, "disconnect", "success"):
+        client.disconnect()
 
 
-def test_on_message_starts_span():
-    raise NotImplementedError
+def test_on_message_starts_span(
+    exporter: JsonObjectSpanExporter, client: StompClient, mock_listener: Mock
+):
+    frame = Frame("test", {"thing": "one"}, body="body")
+    with asserting_span_exporter(exporter, "_on_message", "frame"):
+        mock_listener.on_message(frame)
