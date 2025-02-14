@@ -3,17 +3,10 @@ from concurrent.futures import Future
 from unittest.mock import ANY, Mock, patch
 
 import pytest
-from stomp.connect import (  # type: ignore
-    ConnectFailedException,
-    Frame,
-)
+from stomp.connect import ConnectFailedException, Frame  # type: ignore
 from stomp.connect import StompConnection11 as Connection  # type: ignore
 
-from bluesky_stomp.messaging import (
-    CORRELATION_ID_HEADER,
-    MessageContext,
-    StompClient,
-)
+from bluesky_stomp.messaging import CORRELATION_ID_HEADER, MessageContext, StompClient
 from bluesky_stomp.models import (
     BasicAuthentication,
     Broker,
@@ -97,7 +90,10 @@ def test_sends_serialized_message(mock_connection: Mock, client: StompClient):
 def test_sends_jms_headers(mock_connection: Mock, client: StompClient):
     client.send(MessageQueue(name="misc"), "misc")
     mock_connection.send.assert_called_once_with(
-        headers={"JMSType": "TextMessage"},
+        headers={
+            "JMSType": "TextMessage",
+            "traceparent": ANY,
+        },
         body=ANY,
         destination=ANY,
     )
@@ -109,6 +105,7 @@ def test_sends_correlation_id(mock_connection: Mock, client: StompClient):
         headers={
             "JMSType": "TextMessage",
             CORRELATION_ID_HEADER: "foo",
+            "traceparent": ANY,
         },
         body=ANY,
         destination=ANY,
@@ -125,6 +122,7 @@ def test_sends_reply_queue(mock_connection: Mock, client: StompClient):
         headers={
             "JMSType": "TextMessage",
             "reply-to": ANY,
+            "traceparent": ANY,
         },
         body=ANY,
         destination=ANY,
@@ -362,12 +360,11 @@ def test_disconnect_polls(
     mock_connection.is_connected.side_effect = [
         False,
         False,
+        True,
+        True,
         False,
         False,
         False,
-        True,
-        True,
-        True,
         True,
     ]
     mock_connection.connect.side_effect = [
