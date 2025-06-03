@@ -3,7 +3,7 @@ import logging
 from collections.abc import Iterable
 from concurrent.futures import Future
 from queue import Queue
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -170,7 +170,8 @@ def test_deserialization(
         test_queue, message, message_type
     )
     result = ack.result(timeout=_TIMEOUT)  # type: ignore
-    if type(message) is np.ndarray:
+    if isinstance(message, np.ndarray):
+        message = cast(np.ndarray[Any, Any], message)
         message = message.tolist()
     assert result == message
     assert reply_future.result(timeout=_TIMEOUT) == message
