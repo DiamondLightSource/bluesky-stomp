@@ -237,14 +237,14 @@ class StompClient:
 
             if on_reply is not None:
                 reply_queue = TemporaryMessageQueue(name=str(uuid.uuid1()))
-                headers = {**headers, "reply-to": _destination(reply_queue)}
+                headers["reply-to"] = _destination(reply_queue)
                 self.subscribe(
                     reply_queue,
                     on_reply,
                     on_error=on_reply_error,
                 )
             if correlation_id:
-                headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
+                headers[CORRELATION_ID_HEADER] = correlation_id
 
             propagate_context_in_stomp_headers(headers)
             add_span_attributes({"headers": str(headers)})
@@ -336,7 +336,7 @@ class StompClient:
             "connect",
             kind=SpanKind.SERVER,
         ):
-            add_span_attributes({"success": self._conn.is_connected()})
+            add_span_attributes({"initial": self._conn.is_connected()})
             if not self._conn.is_connected():
                 connected: Event = Event()
 
@@ -393,6 +393,7 @@ class StompClient:
         ):
             if not self.is_connected():
                 logging.info("Already disconnected")
+                add_span_attributes({"success": not self.is_connected()})
                 return
             # We need to synchronise the disconnect on an event because the stomp
             # Connection object doesn't do it for us

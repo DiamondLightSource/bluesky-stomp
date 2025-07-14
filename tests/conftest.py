@@ -16,7 +16,6 @@ from opentelemetry.trace import get_tracer_provider
 def setup():
     setup_tracing("test", False)
     set_console_exporter()
-    return
 
 
 @pytest.fixture(scope="session")
