@@ -5,7 +5,6 @@ import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
-from os import environ
 from threading import Event
 from typing import Any, TypeVar, cast
 
@@ -14,9 +13,8 @@ from observability_utils.tracing import (  # type: ignore
     get_tracer,
     propagate_context_in_stomp_headers,
     retrieve_context_from_stomp_headers,
-    setup_tracing,
-    start_as_current_span,
 )
+from opentelemetry.trace import SpanKind
 from stomp.connect import ConnectionListener  # type: ignore
 from stomp.connect import StompConnection11 as Connection  # type: ignore
 from stomp.exception import ConnectFailedException  # type: ignore
@@ -41,12 +39,6 @@ from .serdes import (
 from .utils import handle_all_exceptions
 
 CORRELATION_ID_HEADER = "correlation-id"
-
-OTLP_EXPORT_ENABLED = environ.get("OTLP_EXPORT_ENABLED", "false").lower() == "true"
-
-setup_tracing("bluesky-stomp", with_otlp_export=OTLP_EXPORT_ENABLED)
-TRACER = get_tracer("bluesky-stomp")
-
 
 T = TypeVar("T")
 
@@ -129,6 +121,7 @@ class StompClient:
         self._conn.set_listener("", self._listener)  # type: ignore
 
         self._subscriptions: dict[str, _Subscription] = {}
+        self.tracer = get_tracer("bluesky-stomp")
 
     @classmethod
     def for_broker(cls, broker: Broker) -> "StompClient":
@@ -150,7 +143,6 @@ class StompClient:
             authentication=broker.auth,
         )
 
-    @start_as_current_span(TRACER, "destination", "obj")  # type: ignore
     def send_and_receive(
         self,
         destination: DestinationBase,
@@ -171,23 +163,26 @@ class StompClient:
         Returns:
             Future[T]: Future representing the reply
         """
+        with self.tracer.start_as_current_span(
+            "send_and_receive",
+            attributes={"destination": str(destination), "obj": str(obj)},
+            kind=SpanKind.SERVER,
+        ):
+            future: Future[T] = Future()
 
-        future: Future[T] = Future()
+            def callback(reply: T, _: MessageContext) -> None:
+                future.set_result(reply)
 
-        def callback(reply: T, _: MessageContext) -> None:
-            future.set_result(reply)
+            callback.__annotations__["reply"] = reply_type
+            self.send(
+                destination,
+                obj,
+                on_reply=callback,
+                on_reply_error=future.set_exception,
+                correlation_id=correlation_id,
+            )
+            return future
 
-        callback.__annotations__["reply"] = reply_type
-        self.send(
-            destination,
-            obj,
-            on_reply=callback,
-            on_reply_error=future.set_exception,
-            correlation_id=correlation_id,
-        )
-        return future
-
-    @start_as_current_span(TRACER, "destination", "obj")  # type: ignore
     def send(
         self,
         destination: DestinationBase,
@@ -209,18 +204,21 @@ class StompClient:
             correlation_id: Correlation ID to be optionally included in message
             headers. Defaults to None.
         """
+        with self.tracer.start_as_current_span(
+            "send",
+            attributes={"destination": str(destination), "obj": str(obj)},
+            kind=SpanKind.SERVER,
+        ):
+            raw_destination = _destination(destination)
+            serialized_message = self._serializer(obj)
+            self._send_bytes(
+                raw_destination,
+                serialized_message,
+                on_reply,
+                on_reply_error,
+                correlation_id,
+            )
 
-        raw_destination = _destination(destination)
-        serialized_message = self._serializer(obj)
-        self._send_bytes(
-            raw_destination,
-            serialized_message,
-            on_reply,
-            on_reply_error,
-            correlation_id,
-        )
-
-    @start_as_current_span(TRACER, "destination", "message")
     def _send_bytes(
         self,
         destination: str,
@@ -230,23 +228,27 @@ class StompClient:
         correlation_id: str | None = None,
     ) -> None:
         logging.info(f"SENDING {message} to {destination}")
+        with self.tracer.start_as_current_span(
+            "_send_bytes",
+            attributes={"destination": destination, "message": message},
+            kind=SpanKind.SERVER,
+        ):
+            headers: dict[str, Any] = {"JMSType": "TextMessage"}
 
-        headers: dict[str, Any] = {"JMSType": "TextMessage"}
+            if on_reply is not None:
+                reply_queue = TemporaryMessageQueue(name=str(uuid.uuid1()))
+                headers["reply-to"] = _destination(reply_queue)
+                self.subscribe(
+                    reply_queue,
+                    on_reply,
+                    on_error=on_reply_error,
+                )
+            if correlation_id:
+                headers[CORRELATION_ID_HEADER] = correlation_id
 
-        if on_reply is not None:
-            reply_queue = TemporaryMessageQueue(name=str(uuid.uuid1()))
-            headers = {**headers, "reply-to": _destination(reply_queue)}
-            self.subscribe(
-                reply_queue,
-                on_reply,
-                on_error=on_reply_error,
-            )
-        if correlation_id:
-            headers = {**headers, CORRELATION_ID_HEADER: correlation_id}
-
-        propagate_context_in_stomp_headers(headers)
-        add_span_attributes({"headers": str(headers)})
-        self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
+            propagate_context_in_stomp_headers(headers)
+            add_span_attributes({"headers": str(headers)})
+            self._conn.send(headers=headers, body=message, destination=destination)  # type: ignore
 
     def listener(
         self,
@@ -274,7 +276,6 @@ class StompClient:
 
         return decorator
 
-    @start_as_current_span(TRACER, "destination", "callback")
     def subscribe(
         self,
         destination: DestinationBase,
@@ -290,64 +291,69 @@ class StompClient:
             The message type is derived from the function signature.
             on_error: How to handle errors processing the message. Defaults to None.
         """
-
         logging.debug(f"New subscription to {destination}")
-        obj_type = determine_callback_deserialization_type(callback)
+        with self.tracer.start_as_current_span(
+            "subscribe",
+            attributes={"destination": str(destination), "callback": str(callback)},
+            kind=SpanKind.SERVER,
+        ):
+            obj_type = determine_callback_deserialization_type(callback)
 
-        def wrapper(frame: Frame) -> None:
-            headers = frame.headers  # type: ignore
-            headers = cast(Mapping[str, str], headers)
-            body = frame.body  # type: ignore
-            body = cast(str | bytes | bytearray, body)
+            def wrapper(frame: Frame) -> None:
+                headers = frame.headers  # type: ignore
+                headers = cast(Mapping[str, str], headers)
+                body = frame.body  # type: ignore
+                body = cast(str | bytes | bytearray, body)
 
-            value = self._deserializer(body, obj_type)
+                value = self._deserializer(body, obj_type)
 
-            reply_to: str | None = headers.get("reply-to")
-            context = MessageContext(
-                _destination_from_str(headers["destination"]),
-                _destination_from_str(reply_to) if reply_to is not None else None,
-                headers.get(CORRELATION_ID_HEADER),
+                reply_to: str | None = headers.get("reply-to")
+                context = MessageContext(
+                    _destination_from_str(headers["destination"]),
+                    _destination_from_str(reply_to) if reply_to is not None else None,
+                    headers.get(CORRELATION_ID_HEADER),
+                )
+
+                callback(value, context)
+
+            sub_id = (
+                _destination(destination)
+                if isinstance(destination, TemporaryMessageQueue)
+                else str(next(self._sub_num))
             )
+            self._subscriptions[sub_id] = _Subscription(
+                destination, wrapper, on_error=on_error
+            )
+            # If we're connected, subscribe immediately, otherwise the subscription is
+            # deferred until connection.
+            self._ensure_subscribed([sub_id])
 
-            callback(value, context)
-
-        sub_id = (
-            _destination(destination)
-            if isinstance(destination, TemporaryMessageQueue)
-            else str(next(self._sub_num))
-        )
-        self._subscriptions[sub_id] = _Subscription(
-            destination, wrapper, on_error=on_error
-        )
-        # If we're connected, subscribe immediately, otherwise the subscription is
-        # deferred until connection.
-        self._ensure_subscribed([sub_id])
-
-    @start_as_current_span(TRACER)
     def connect(self) -> None:
         """
         Connect to the broker, blocks until connection established
         """
+        with self.tracer.start_as_current_span(
+            "connect",
+            kind=SpanKind.SERVER,
+        ):
+            add_span_attributes({"initial": self._conn.is_connected()})
+            if not self._conn.is_connected():
+                connected: Event = Event()
 
-        add_span_attributes({"success": self._conn.is_connected()})
+                def finished_connecting(frame: Frame) -> None:
+                    connected.set()
 
-        if not self._conn.is_connected():
-            connected: Event = Event()
+                self._listener.on_connected = finished_connecting
+                self._listener.on_disconnected = self._on_disconnected
 
-            def finished_connecting(frame: Frame) -> None:
-                connected.set()
+                logging.info("Connecting...")
 
-            self._listener.on_connected = finished_connecting
-            self._listener.on_disconnected = self._on_disconnected
+                self._connect_to_broker()
+                connected.wait()
 
-            logging.info("Connecting...")
+            self._ensure_subscribed()
 
-            self._connect_to_broker()
-            connected.wait()
-
-        self._ensure_subscribed()
-
-        add_span_attributes({"success": self._conn.is_connected()})
+            add_span_attributes({"success": self._conn.is_connected()})
 
     def _connect_to_broker(self) -> None:
         if self._authentication is not None:
@@ -375,25 +381,28 @@ class StompClient:
                     ack="auto",
                 )
 
-    @start_as_current_span(TRACER)
     def disconnect(self) -> None:
         """
         Disconnect from the broker
         """
-        add_span_attributes({"initial": self.is_connected()})
-
         logging.info("Disconnecting...")
-        if not self.is_connected():
-            logging.info("Already disconnected")
-            return
-        # We need to synchronise the disconnect on an event because the stomp Connection
-        # object doesn't do it for us
-        disconnected = Event()
-        self._listener.on_disconnected = disconnected.set
-        self._conn.disconnect()  # type: ignore
-        disconnected.wait()
+        with self.tracer.start_as_current_span(
+            "disconnect",
+            attributes={"initial": self.is_connected()},
+            kind=SpanKind.SERVER,
+        ):
+            if not self.is_connected():
+                logging.info("Already disconnected")
+                add_span_attributes({"success": not self.is_connected()})
+                return
+            # We need to synchronise the disconnect on an event because the stomp
+            # Connection object doesn't do it for us
+            disconnected = Event()
+            self._listener.on_disconnected = disconnected.set
+            self._conn.disconnect()  # type: ignore
+            disconnected.wait()
 
-        add_span_attributes({"success": not self.is_connected()})
+            add_span_attributes({"success": not self.is_connected()})
 
     @handle_all_exceptions
     def _on_disconnected(self) -> None:
@@ -418,8 +427,11 @@ class StompClient:
         )
 
         trace_context = retrieve_context_from_stomp_headers(frame)  # type:ignore
-        with TRACER.start_as_current_span("_on_message", trace_context):
-            add_span_attributes({"frame": str(frame)})
+        with self.tracer.start_as_current_span(
+            "_on_message",
+            context=trace_context,
+            attributes={"frame": str(frame)},
+        ):
             if (sub_id := headers.get("subscription")) is not None:
                 if (sub := self._subscriptions.get(sub_id)) is not None:
                     try:
