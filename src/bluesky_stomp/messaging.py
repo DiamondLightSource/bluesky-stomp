@@ -227,7 +227,7 @@ class StompClient:
         on_reply_error: ErrorListener | None = None,
         correlation_id: str | None = None,
     ) -> None:
-        logging.info(f"SENDING {message} to {destination}")
+        logging.debug(f"SENDING {message} to {destination}")
         with self.tracer.start_as_current_span(
             "_send_bytes",
             attributes={"destination": destination, "message": message},
@@ -283,7 +283,7 @@ class StompClient:
         on_error: ErrorListener | None = None,
     ) -> None:
         """
-        Subscibe to messages on a particular queue or topic
+        Subscribe to messages on a particular queue or topic
 
         Args:
             destination: Where the messages will come from
@@ -346,7 +346,7 @@ class StompClient:
                 self._listener.on_connected = finished_connecting
                 self._listener.on_disconnected = self._on_disconnected
 
-                logging.info("Connecting...")
+                logging.info("Stomp client connecting...")
 
                 self._connect_to_broker()
                 connected.wait()
@@ -373,7 +373,7 @@ class StompClient:
         if self._conn.is_connected():
             for sub_id in sub_ids or self._subscriptions.keys():
                 sub = self._subscriptions[sub_id]
-                logging.info(f"Subscribing to {sub.destination}")
+                logging.info(f"Stomp client subscribing to {sub.destination}")
                 raw_destination = _destination(sub.destination)
                 self._conn.subscribe(  # type: ignore
                     destination=raw_destination,
@@ -385,7 +385,7 @@ class StompClient:
         """
         Disconnect from the broker
         """
-        logging.info("Disconnecting...")
+        logging.info("Stomp client disconnecting...")
         with self.tracer.start_as_current_span(
             "disconnect",
             attributes={"initial": self.is_connected()},
@@ -420,7 +420,7 @@ class StompClient:
 
     @handle_all_exceptions
     def _on_message(self, frame: Frame) -> None:
-        logging.info(f"Received {frame}")
+        logging.debug(f"Received {frame}")
         headers: Mapping[str, Any] = cast(
             Mapping[str, Any],
             frame.headers,  # type: ignore
