@@ -70,7 +70,7 @@ def test_disconnected_error(
 
     client.disconnect()
     assert not client.is_connected()
-    assert "Disconnecting..." in caplog.text
+    assert "Stomp client disconnecting..." in caplog.text
     assert "Already disconnected" in caplog.text
 
 
