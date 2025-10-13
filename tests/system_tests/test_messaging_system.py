@@ -223,6 +223,65 @@ def test_correlation_id(
     assert ctx_ack.correlation_id == correlation_id
 
 
+def test_unsubscribe(client: StompClient, test_topic: MessageTopic) -> None:
+    queue: Queue[str] = Queue()
+
+    def server(message: str, _: MessageContext) -> None:
+        queue.put(message)
+
+    sub = client.subscribe(test_topic, server)
+    client.send(test_topic, "test_1")
+
+    assert queue.get() == "test_1"
+
+    client.unsubscribe(sub)
+
+    client.subscribe(test_topic, server)
+    client.send(test_topic, "test_2")
+    client.send(test_topic, "test_3")
+
+    assert queue.get() == "test_2"
+    assert queue.get() == "test_3"
+
+
+def test_reset_subscribers(client: StompClient, test_topic: MessageTopic) -> None:
+    queue: Queue[str] = Queue()
+
+    def server(message: str, _: MessageContext) -> None:
+        queue.put(message)
+
+    # Base case
+    sub = client.subscribe(test_topic, server)
+    client.send(test_topic, "test_1")
+
+    assert queue.get() == "test_1"
+
+    client.disconnect()
+    client.connect()
+
+    # We now have 2 subscriptions, each message will be handled twice
+    client.subscribe(test_topic, server)
+
+    client.send(test_topic, "test_2")
+    assert queue.get() == "test_2"
+    assert queue.get() == "test_2"
+
+    client.send(test_topic, "test_3")
+    assert queue.get() == "test_3"
+    assert queue.get() == "test_3"
+
+    client.unsubscribe(sub)
+
+    client.disconnect()
+    client.connect()
+
+    # We're back down to 1 subscription again, messages are sequential
+    client.send(test_topic, "test_4")
+    client.send(test_topic, "test_5")
+    assert queue.get() == "test_4"
+    assert queue.get() == "test_5"
+
+
 def acknowledge(client: StompClient, destination: DestinationBase) -> None:
     def server(message: str, ctx: MessageContext) -> None:
         reply_queue = ctx.reply_destination

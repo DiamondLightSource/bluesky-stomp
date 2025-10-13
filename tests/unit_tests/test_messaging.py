@@ -167,6 +167,25 @@ def test_subscribe_before_connect(mock_connection: Mock, client: StompClient):
 
 def test_subscribe_after_connect(mock_connection: Mock, client: StompClient):
     mock_connection.is_connected.return_value = True
+    client.connect()
+
+    client.subscribe(MessageQueue(name="misc"), lambda msg, context: None)
+
+    mock_connection.is_connected.return_value = False
+    client.disconnect()
+    mock_connection.is_connected.return_value = True
+    client.connect()
+
+    assert mock_connection.subscribe.call_count == 2
+    mock_connection.subscribe.assert_called_with(
+        destination=ANY,
+        id="0",
+        ack="auto",
+    )
+
+
+def test_resubscribe_on_reconnect(mock_connection: Mock, client: StompClient):
+    mock_connection.is_connected.return_value = True
 
     client.subscribe(MessageQueue(name="misc"), lambda msg, context: None)
 
@@ -175,6 +194,35 @@ def test_subscribe_after_connect(mock_connection: Mock, client: StompClient):
         id="0",
         ack="auto",
     )
+
+
+def test_unsubscribe_after_connect(mock_connection: Mock, client: StompClient):
+    mock_connection.is_connected.return_value = True
+
+    sub = client.subscribe(MessageQueue(name="misc"), lambda msg, context: None)
+    client.unsubscribe(sub)
+
+    mock_connection.unsubscribe.assert_called_once_with("0")
+
+
+def test_unsubscribe_before_connect(mock_connection: Mock, client: StompClient):
+    mock_connection.is_connected.return_value = False
+
+    sub = client.subscribe(MessageQueue(name="misc"), lambda msg, context: None)
+    client.unsubscribe(sub)
+
+    mock_connection.is_connected.return_value = True
+    client.connect()
+    mock_connection.unsubscribe.assert_not_called()
+
+
+def test_unsubscribe_on_nonexistant_subscription(
+    mock_connection: Mock, client: StompClient
+):
+    mock_connection.is_connected.return_value = True
+
+    client.unsubscribe("nothing")
+    mock_connection.unsubscribe.assert_not_called()
 
 
 def test_connect_is_idempotent(mock_connection: Mock, client: StompClient):
