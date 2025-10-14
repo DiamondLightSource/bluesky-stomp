@@ -281,7 +281,7 @@ class StompClient:
         destination: DestinationBase,
         callback: MessageListener,
         on_error: ErrorListener | None = None,
-    ) -> None:
+    ) -> str:
         """
         Subscribe to messages on a particular queue or topic
 
@@ -290,6 +290,9 @@ class StompClient:
             callback: Function for processing the messages.
             The message type is derived from the function signature.
             on_error: How to handle errors processing the message. Defaults to None.
+
+        Return:
+            A unqiue identifier to pass to unsubscribe()
         """
         logging.debug(f"New subscription to {destination}")
         with self.tracer.start_as_current_span(
@@ -327,6 +330,20 @@ class StompClient:
             # If we're connected, subscribe immediately, otherwise the subscription is
             # deferred until connection.
             self._ensure_subscribed([sub_id])
+
+            return sub_id
+
+    def unsubscribe(self, sub_id: str) -> None:
+        if sub_id in self._subscriptions:
+            logging.debug(f"Unsubscribing ID {sub_id}")
+            if self._conn.is_connected():
+                logging.debug("Connection is live, sending unsubscribe request")
+                self._conn.unsubscribe(sub_id)  # type: ignore
+            del self._subscriptions[
+                sub_id
+            ]  # Ensure that client won't re-subscribe upon re-connection
+        else:
+            logging.debug(f"No subscription for ID {sub_id}, nothing to do")
 
     def connect(self) -> None:
         """
