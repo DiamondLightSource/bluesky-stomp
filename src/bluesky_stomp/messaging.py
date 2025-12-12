@@ -373,14 +373,19 @@ class StompClient:
             add_span_attributes({"success": self._conn.is_connected()})
 
     def _connect_to_broker(self) -> None:
-        if self._authentication is not None:
-            self._conn.connect(  # type: ignore
-                username=self._authentication.username,
-                passcode=self._authentication.password.get_secret_value(),
-                wait=True,
-            )
-        else:
-            self._conn.connect(wait=True)  # type: ignore
+        try:
+            if self._authentication is not None:
+                self._conn.connect(  # type: ignore
+                    username=self._authentication.username,
+                    passcode=self._authentication.password.get_secret_value(),
+                    wait=True,
+                )
+            else:
+                self._conn.connect(wait=True)  # type: ignore
+        except ConnectFailedException:
+            raise
+        except Exception as e:
+            raise ConnectFailedException() from e
 
     def _ensure_subscribed(self, sub_ids: list[str] | None = None) -> None:
         # Subscription must happen AFTER connection. Because stomp literally
