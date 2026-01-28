@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier
-_commit: 2.6.0
+_commit: 5.0.2
 _src_path: gh:DiamondLightSource/python-copier-template
 author_email: callum.forrester@diamond.ac.uk
 author_name: Callum Forrester
@@ -15,4 +15,5 @@ github_org: DiamondLightSource
 package_name: bluesky_stomp
 pypi: true
 repo_name: bluesky-stomp
+strict_typing: true
 type_checker: pyright
