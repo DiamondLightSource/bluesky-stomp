@@ -25,15 +25,8 @@ def serialize_message(message: Any) -> bytes:
         str: The serialized object
     """
 
-    if isinstance(message, BaseModel):
-        # Serialize by alias so that our camelCase models leave the service
-        # with camelCase field names
-        json_serializable = message.model_dump(by_alias=True)
-    else:
-        json_serializable = message
-
     return orjson.dumps(
-        json_serializable,
+        message,
         option=orjson.OPT_SERIALIZE_NUMPY,
         default=_fallback_serialize,
     )
@@ -97,6 +90,10 @@ def determine_callback_deserialization_type(
 
 
 def _fallback_serialize(obj: Any) -> Any:
-    if isinstance(obj, set):
+    if isinstance(obj, BaseModel):
+        # Serialize by alias so that our camelCase models leave the service
+        # with camelCase field names
+        return obj.model_dump(by_alias=True)
+    elif isinstance(obj, set):
         return list(cast(set[Any], obj))
     raise TypeError(f"Type {type(obj)} not serializable")
