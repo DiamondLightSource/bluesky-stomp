@@ -22,7 +22,7 @@ def serialize_message(message: Any) -> bytes:
         obj: The object to serialize
 
     Returns:
-        str: The serialized object
+        bytes: The serialized object
     """
 
     if isinstance(message, BaseModel):
