@@ -101,6 +101,9 @@ DE_SERIALIZATION_TEST_CASES = [
         b'{"unique":[1,2,3],"repeated":[1,1,2,2,3,3]}',
         Bar,
     ),
+    DeAndSerializationTestCase(
+        [Foo(bar=1, baz="one")], b'[{"bar":1,"baz":"one"}]', list[Foo]
+    ),
 ]
 
 
