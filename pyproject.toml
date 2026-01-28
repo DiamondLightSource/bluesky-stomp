@@ -21,7 +21,6 @@ requires-python = ">=3.10"
 
 [dependency-groups]
 dev = [
-    { include-group = "demo" },
     "copier",
     "numpy",
     "pre-commit",
@@ -31,15 +30,6 @@ dev = [
     "ruff",
     "tox-uv",
     "types-mock",
-]
-
-demo = [
-    "bluesky",
-    "ophyd-async",
-    "IPython",
-    "h5py",
-    "prompt_toolkit>=3.0.47",
-    "suitcase-csv",
 ]
 
 [project.scripts]

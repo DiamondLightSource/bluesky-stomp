@@ -13,18 +13,7 @@
             "purpose": [
                 "debug-test"
             ],
-            "console": "integratedTerminal",
-        },
-        {
-            "name": "Demo (Consumer)",
-            "type": "debugpy",
-            "request": "launch",
-            "justMyCode": false,
-            "module": "bluesky_stomp.demo.file_writer",
-            "purpose": [
-                "debug-test"
-            ],
-            "console": "integratedTerminal",
+            "console": "integratedTerminal"
         }
     ]
 }
