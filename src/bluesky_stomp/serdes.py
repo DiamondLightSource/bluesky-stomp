@@ -99,4 +99,6 @@ def determine_callback_deserialization_type(
 def _fallback_serialize(obj: Any) -> Any:
     if isinstance(obj, set):
         return list(cast(set[Any], obj))
+    elif (custom := getattr(obj, "into_json", None)) and callable(custom):
+        return custom()
     raise TypeError(f"Type {type(obj)} not serializable")
