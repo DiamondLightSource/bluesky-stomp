@@ -4,7 +4,7 @@ asgiref==3.9.1
 asttokens==3.0.0
 attrs==25.3.0
 bluesky==1.14.2
-certifi==2025.7.9
+certifi==2026.10.23
 cfgv==3.4.0
 charset-normalizer==3.4.2
 click==8.2.1
