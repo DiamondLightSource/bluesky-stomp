@@ -32,8 +32,6 @@ jobs:
       python-version: ${{ matrix.python-version }}
 
   system-test-activemq:
-    needs: check
-    if: needs.check.outputs.branch-pr == ''
     strategy:
       matrix:
         runs-on: ["ubuntu-latest"] # can add windows-latest, macos-latest
@@ -45,8 +43,6 @@ jobs:
       python-version: ${{ matrix.python-version }}
 
   system-test-rabbitmq:
-    needs: check
-    if: needs.check.outputs.branch-pr == ''
     strategy:
       matrix:
         runs-on: ["ubuntu-latest"] # can add windows-latest, macos-latest
