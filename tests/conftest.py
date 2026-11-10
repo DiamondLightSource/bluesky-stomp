@@ -1,5 +1,4 @@
-import os
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from observability_utils.tracing import (  # type: ignore
