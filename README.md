@@ -7,8 +7,9 @@
 
 STOMP integration for bluesky
 
-Source          | <https://github.com/DiamondLightSource/bluesky-stomp>
+What            | Where
 :---:           | :---:
+Source          | <https://github.com/DiamondLightSource/bluesky-stomp>
 PyPI            | `pip install bluesky-stomp`
 Releases        | <https://github.com/DiamondLightSource/bluesky-stomp/releases>
 

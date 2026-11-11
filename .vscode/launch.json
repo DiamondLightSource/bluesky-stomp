@@ -13,22 +13,7 @@
             "purpose": [
                 "debug-test"
             ],
-            "console": "integratedTerminal",
-            "env": {
-                // Enable break on exception when debugging tests (see: tests/conftest.py)
-                "PYTEST_RAISE": "1",
-            },
-        },
-        {
-            "name": "Demo (Consumer)",
-            "type": "debugpy",
-            "request": "launch",
-            "justMyCode": false,
-            "module": "bluesky_stomp.demo.file_writer",
-            "purpose": [
-                "debug-test"
-            ],
-            "console": "integratedTerminal",
+            "console": "integratedTerminal"
         }
     ]
 }
